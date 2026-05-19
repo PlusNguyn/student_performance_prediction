@@ -1,0 +1,25 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Account</p>
+        <h2>Profile information</h2>
+      </div>
+      <a class="btn btn-outline-primary" href="{% url 'accounts:change_password' %}">
+        <i class="fa-solid fa-key"></i> Change password
+      </a>
+    </div>
+    <form method="post" class="panel form-grid" novalidate>
+      {% csrf_token %}
+      {% include "components/form_errors.html" %}
+      {% for field in form %}
+        {% include "components/form_field.html" with field=field %}
+      {% endfor %}
+      <div class="form-span-2 d-flex justify-content-end">
+        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Save profile</button>
+      </div>
+    </form>
+  </section>
+{% endblock %}

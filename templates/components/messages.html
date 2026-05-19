@@ -1,0 +1,10 @@
+{% if messages %}
+  <div class="toast-stack">
+    {% for message in messages %}
+      <div class="app-alert app-alert-{{ message.tags|default:'info' }}">
+        <i class="fa-solid fa-circle-info"></i>
+        <span>{{ message }}</span>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}

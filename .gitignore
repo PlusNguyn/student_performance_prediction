@@ -1,0 +1,16 @@
+venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.env
+mlruns/
+*.log
+.DS_Store
+.idea/
+.vscode/
+data/
+models/
+.airflow/logs/
+.airflow/plugins/
+.airflow/airflow.db
+.airflow/*.pid

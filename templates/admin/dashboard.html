@@ -1,0 +1,91 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Operations</p>
+        <h2>System overview</h2>
+      </div>
+      <div class="toolbar">
+        <a class="btn btn-primary" href="{% url 'accounts:account_create' %}"><i class="fa-solid fa-user-plus"></i> New account</a>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      {% for card in kpis %}
+        {% include "components/kpi_card.html" with card=card %}
+      {% endfor %}
+    </div>
+
+    <div class="dashboard-grid mt-4">
+      <article class="panel panel-span-8">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Prediction statistics</p>
+            <h3>Monthly prediction volume</h3>
+          </div>
+        </div>
+        <div class="chart-box chart-tall"><canvas data-chart='{{ charts.prediction }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">API</p>
+            <h3>Requests</h3>
+          </div>
+        </div>
+        <div class="chart-box"><canvas data-chart='{{ charts.requests }}'></canvas></div>
+      </article>
+    </div>
+
+    <div class="dashboard-grid mt-4">
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Model</p>
+            <h3>Current metrics</h3>
+          </div>
+        </div>
+        <div class="chart-box"><canvas data-chart='{{ charts.model }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">MLOps</p>
+            <h3>Service status</h3>
+          </div>
+        </div>
+        <div class="stack-list">
+          {% for service in services %}
+            <div class="service-row">
+              <span class="service-dot service-{{ service.tone }}"></span>
+              <div>
+                <strong>{{ service.name }}</strong>
+                <p>{{ service.detail }}</p>
+              </div>
+              <span class="badge-soft">{{ service.status }}</span>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Logs</p>
+            <h3>Recent system events</h3>
+          </div>
+        </div>
+        <div class="log-list">
+          {% for item in logs %}
+            <div class="log-row">
+              <span>{{ item.time }}</span>
+              <strong>{{ item.source }}</strong>
+              <p>{{ item.message }}</p>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+  </section>
+{% endblock %}

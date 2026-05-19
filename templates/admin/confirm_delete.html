@@ -1,0 +1,16 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band content-narrow">
+    <div class="confirm-panel">
+      <div class="confirm-icon"><i class="fa-solid fa-trash"></i></div>
+      <h2>Delete account</h2>
+      <p>This will remove <strong>{{ target_user.username }}</strong> and its profile information.</p>
+      <form method="post" class="d-flex justify-content-center gap-2">
+        {% csrf_token %}
+        <a class="btn btn-light" href="{% url 'accounts:account_list' %}">Cancel</a>
+        <button class="btn btn-danger" type="submit"><i class="fa-solid fa-trash"></i> Delete</button>
+      </form>
+    </div>
+  </section>
+{% endblock %}

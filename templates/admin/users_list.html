@@ -1,0 +1,91 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Administration</p>
+        <h2>Account management</h2>
+      </div>
+      <a class="btn btn-primary" href="{% url 'accounts:account_create' %}">
+        <i class="fa-solid fa-user-plus"></i> Create account
+      </a>
+    </div>
+
+    <article class="panel">
+      <form class="table-filter" method="get">
+        <div class="search-inline">
+          <input class="form-control" type="search" name="q" value="{{ query }}" placeholder="Search name, email, ID">
+          <select class="form-select" name="role">
+            <option value="">All roles</option>
+            {% for value,label in role_choices %}
+              <option value="{{ value }}" {% if role_filter == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn-outline-primary" type="submit"><i class="fa-solid fa-filter"></i> Filter</button>
+        </div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table app-table align-middle">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th>Role</th>
+              <th>ID</th>
+              <th>Phone</th>
+              <th>Created</th>
+              <th>Last login</th>
+              <th>Status</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>
+                  <div class="user-cell">
+                    <span class="avatar avatar-sm">{{ row.user.first_name|default:row.user.username|first|upper }}</span>
+                    <div>
+                      <strong>{{ row.profile.full_name }}</strong>
+                      <span>{{ row.user.email|default:row.user.username }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td><span class="badge-soft">{{ row.role|title }}</span></td>
+                <td>{{ row.profile.account_code|default:"-" }}</td>
+                <td>{{ row.profile.phone|default:"-" }}</td>
+                <td>{{ row.user.date_joined|date:"M d, Y" }}</td>
+                <td>{{ row.user.last_login|date:"M d, Y H:i"|default:"Never" }}</td>
+                <td>
+                  {% if row.user.is_active %}
+                    <span class="status-pill status-success">Enabled</span>
+                  {% else %}
+                    <span class="status-pill status-danger">Disabled</span>
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  <div class="action-row">
+                    <a class="icon-btn" href="{% url 'accounts:account_update' row.user.id %}" title="Edit"><i class="fa-solid fa-pen"></i></a>
+                    <a class="icon-btn" href="{% url 'accounts:account_reset_password' row.user.id %}" title="Reset password"><i class="fa-solid fa-key"></i></a>
+                    <form method="post" action="{% url 'accounts:account_toggle' row.user.id %}">
+                      {% csrf_token %}
+                      <button class="icon-btn" type="submit" title="Enable or disable"><i class="fa-solid fa-power-off"></i></button>
+                    </form>
+                    <a class="icon-btn danger" href="{% url 'accounts:account_delete' row.user.id %}" title="Delete"><i class="fa-solid fa-trash"></i></a>
+                  </div>
+                </td>
+              </tr>
+            {% empty %}
+              <tr>
+                <td colspan="8">
+                  <div class="empty-table">No accounts match the current filter.</div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+{% endblock %}

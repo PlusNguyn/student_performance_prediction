@@ -1,0 +1,15 @@
+﻿asgiref==3.11.1
+Django==5.2.14
+-r .mlflow/requirements.txt
+joblib>=1.4,<2
+lightgbm>=4.5,<5
+numpy>=1.26,<3
+optuna>=4.0,<5
+pandas>=2.2,<3
+psycopg[binary]>=3.2,<4
+python-dotenv>=1.0,<2
+scikit-learn>=1.5,<2
+sqlparse==0.5.5
+typing_extensions==4.15.0
+xgboost>=2.1,<4
+tzdata==2026.2

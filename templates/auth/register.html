@@ -1,0 +1,28 @@
+{% extends "base/layout.html" %}
+
+{% block auth_content %}
+  <section class="auth-card auth-card-wide">
+    <div class="auth-panel">
+      <div class="brand-lockup auth-brand">
+        <div class="brand-mark"><i class="fa-solid fa-user-plus"></i></div>
+        <div>
+          <strong>Create account</strong>
+          <span>Role-based learning workspace</span>
+        </div>
+      </div>
+      <form method="post" class="form-grid" novalidate>
+        {% csrf_token %}
+        {% include "components/form_errors.html" %}
+        {% for field in form %}
+          {% include "components/form_field.html" with field=field %}
+        {% endfor %}
+        <div class="form-span-2">
+          <button class="btn btn-primary w-100 btn-lg" type="submit">
+            <i class="fa-solid fa-user-check"></i> Create account
+          </button>
+        </div>
+      </form>
+      <p class="auth-switch">Already have an account? <a href="{% url 'accounts:login' %}">Sign in</a></p>
+    </div>
+  </section>
+{% endblock %}

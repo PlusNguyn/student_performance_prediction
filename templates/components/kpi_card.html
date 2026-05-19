@@ -1,0 +1,10 @@
+<article class="kpi-card kpi-{{ card.tone|default:'primary' }}">
+  <div class="kpi-icon">
+    <i class="fa-solid {{ card.icon|default:'fa-chart-simple' }}"></i>
+  </div>
+  <div>
+    <p class="kpi-label">{{ card.label }}</p>
+    <div class="kpi-value">{{ card.value }}</div>
+    <span class="kpi-trend">{{ card.trend }}</span>
+  </div>
+</article>

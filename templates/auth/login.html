@@ -1,0 +1,28 @@
+{% extends "base/layout.html" %}
+
+{% block auth_content %}
+  <section class="auth-card">
+    <div class="auth-panel">
+      <div class="brand-lockup auth-brand">
+        <div class="brand-mark"><i class="fa-solid fa-graduation-cap"></i></div>
+        <div>
+          <strong>EduPredict</strong>
+          <span>Student performance analytics</span>
+        </div>
+      </div>
+      <h1>Sign in</h1>
+      <p class="text-muted mb-4">Access role-based learning dashboards, predictions, and MLOps monitoring.</p>
+      <form method="post" novalidate>
+        {% csrf_token %}
+        {% include "components/form_errors.html" %}
+        {% for field in form %}
+          {% include "components/form_field.html" with field=field %}
+        {% endfor %}
+        <button class="btn btn-primary w-100 btn-lg" type="submit">
+          <i class="fa-solid fa-right-to-bracket"></i> Sign in
+        </button>
+      </form>
+      <p class="auth-switch">New to the system? <a href="{% url 'accounts:register' %}">Create an account</a></p>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,46 @@
+<aside class="sidebar" id="appSidebar">
+  <div class="brand-lockup">
+    <div class="brand-mark">
+      <i class="fa-solid fa-graduation-cap"></i>
+    </div>
+    <div>
+      <strong>EduPredict</strong>
+      <span>MLOps Analytics</span>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    {% if active_role == "student" %}
+      <a class="{% if active_section == 'dashboard' %}active{% endif %}" href="{% url 'accounts:student_dashboard' %}"><i class="fa-solid fa-table-cells-large"></i><span>Dashboard</span></a>
+      <a class="{% if active_section == 'progress' %}active{% endif %}" href="{% url 'accounts:student_page' 'progress' %}"><i class="fa-solid fa-chart-line"></i><span>Learning Progress</span></a>
+      <a class="{% if active_section == 'predictions' %}active{% endif %}" href="{% url 'accounts:student_page' 'predictions' %}"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Predictions</span></a>
+      <a class="{% if active_section == 'analytics' %}active{% endif %}" href="{% url 'accounts:student_page' 'analytics' %}"><i class="fa-solid fa-chart-pie"></i><span>Analytics</span></a>
+      <a class="{% if active_section == 'notifications' %}active{% endif %}" href="{% url 'accounts:student_page' 'notifications' %}"><i class="fa-solid fa-bell"></i><span>Notifications</span></a>
+      <a class="{% if active_section == 'recommendations' %}active{% endif %}" href="{% url 'accounts:student_page' 'recommendations' %}"><i class="fa-solid fa-lightbulb"></i><span>Recommendations</span></a>
+      <a class="{% if active_section == 'profile' %}active{% endif %}" href="{% url 'accounts:profile' %}"><i class="fa-solid fa-user"></i><span>Profile</span></a>
+      <a class="{% if active_section == 'settings' %}active{% endif %}" href="{% url 'accounts:change_password' %}"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
+    {% elif active_role == "lecturer" %}
+      <a class="{% if active_section == 'dashboard' %}active{% endif %}" href="{% url 'accounts:lecturer_dashboard' %}"><i class="fa-solid fa-table-cells-large"></i><span>Dashboard</span></a>
+      <a class="{% if active_section == 'students' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'students' %}"><i class="fa-solid fa-users"></i><span>Students</span></a>
+      <a class="{% if active_section == 'classes' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'classes' %}"><i class="fa-solid fa-chalkboard"></i><span>Classes</span></a>
+      <a class="{% if active_section == 'analytics' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'analytics' %}"><i class="fa-solid fa-chart-pie"></i><span>Analytics</span></a>
+      <a class="{% if active_section == 'reports' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'reports' %}"><i class="fa-solid fa-file-lines"></i><span>Reports</span></a>
+      <a class="{% if active_section == 'alerts' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'alerts' %}"><i class="fa-solid fa-triangle-exclamation"></i><span>Alerts</span></a>
+      <a class="{% if active_section == 'predictions' %}active{% endif %}" href="{% url 'accounts:lecturer_page' 'predictions' %}"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Predictions</span></a>
+      <a class="{% if active_section == 'profile' %}active{% endif %}" href="{% url 'accounts:profile' %}"><i class="fa-solid fa-user"></i><span>Profile</span></a>
+    {% else %}
+      <a class="{% if active_section == 'dashboard' %}active{% endif %}" href="{% url 'accounts:admin_dashboard' %}"><i class="fa-solid fa-table-cells-large"></i><span>Dashboard</span></a>
+      <a class="{% if active_section == 'users' %}active{% endif %}" href="{% url 'accounts:account_list' %}"><i class="fa-solid fa-users-gear"></i><span>Users</span></a>
+      <a class="{% if active_section == 'models' %}active{% endif %}" href="{% url 'accounts:admin_page' 'models' %}"><i class="fa-solid fa-microchip"></i><span>Models</span></a>
+      <a class="{% if active_section == 'mlflow' %}active{% endif %}" href="{% url 'accounts:admin_page' 'mlflow' %}"><i class="fa-solid fa-code-branch"></i><span>MLflow</span></a>
+      <a class="{% if active_section == 'airflow' %}active{% endif %}" href="{% url 'accounts:admin_page' 'airflow' %}"><i class="fa-solid fa-diagram-project"></i><span>Airflow</span></a>
+      <a class="{% if active_section == 'logs' %}active{% endif %}" href="{% url 'accounts:admin_page' 'logs' %}"><i class="fa-solid fa-terminal"></i><span>Logs</span></a>
+      <a class="{% if active_section == 'monitoring' %}active{% endif %}" href="{% url 'accounts:admin_page' 'monitoring' %}"><i class="fa-solid fa-server"></i><span>System Monitoring</span></a>
+      <a class="{% if active_section == 'settings' %}active{% endif %}" href="{% url 'accounts:change_password' %}"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
+    {% endif %}
+  </nav>
+
+  <div class="sidebar-footer">
+    <span class="status-pill"><i class="fa-solid fa-circle"></i> Online</span>
+  </div>
+</aside>

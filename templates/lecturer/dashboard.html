@@ -1,0 +1,132 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Class intelligence</p>
+        <h2>Teaching dashboard</h2>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-outline-primary" type="button"><i class="fa-solid fa-file-pdf"></i> PDF</button>
+        <button class="btn btn-outline-primary" type="button"><i class="fa-solid fa-file-excel"></i> Excel</button>
+      </div>
+    </div>
+
+    <div class="kpi-grid">
+      {% for card in kpis %}
+        {% include "components/kpi_card.html" with card=card %}
+      {% endfor %}
+    </div>
+
+    <div class="dashboard-grid mt-4">
+      <article class="panel panel-span-6">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Distribution</p>
+            <h3>Engagement score</h3>
+          </div>
+        </div>
+        <div class="chart-box chart-tall"><canvas data-chart='{{ charts.engagement }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-6">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Weekly</p>
+            <h3>Learning activity</h3>
+          </div>
+        </div>
+        <div class="chart-box chart-tall"><canvas data-chart='{{ charts.activity }}'></canvas></div>
+      </article>
+    </div>
+
+    <div class="dashboard-grid mt-4">
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Risk</p>
+            <h3>Prediction analytics</h3>
+          </div>
+        </div>
+        <div class="chart-box"><canvas data-chart='{{ charts.risk }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Model</p>
+            <h3>Performance summary</h3>
+          </div>
+        </div>
+        <div class="chart-box"><canvas data-chart='{{ charts.model }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Alerts</p>
+            <h3>Student signals</h3>
+          </div>
+        </div>
+        <div class="stack-list">
+          {% for alert in alerts %}
+            <div class="alert-card alert-{{ alert.tone }}">
+              <i class="fa-solid fa-bell"></i>
+              <div>
+                <strong>{{ alert.title }}</strong>
+                <p>{{ alert.body }}</p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
+    </div>
+
+    <article class="panel mt-4">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Priority</p>
+          <h3>Top weak students</h3>
+        </div>
+        <div class="table-tools">
+          <input class="form-control" type="search" placeholder="Search students">
+          <select class="form-select">
+            <option>All risk levels</option>
+            <option>High</option>
+            <option>Medium</option>
+            <option>Low</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table app-table align-middle">
+          <thead>
+            <tr>
+              <th>Student</th>
+              <th>ID</th>
+              <th>Risk</th>
+              <th>Learning score</th>
+              <th>Engagement</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for student in weak_students %}
+              <tr>
+                <td>{{ student.name }}</td>
+                <td>{{ student.student_id }}</td>
+                <td><span class="risk-badge risk-{{ student.risk|lower }}">{{ student.risk }}</span></td>
+                <td>
+                  <div class="mini-progress"><span style="width: {{ student.score }}%"></span></div>
+                  {{ student.score }}
+                </td>
+                <td>{{ student.engagement }}</td>
+                <td class="text-end">
+                  <button class="icon-btn" type="button" title="View student"><i class="fa-solid fa-eye"></i></button>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+{% endblock %}

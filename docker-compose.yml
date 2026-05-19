@@ -1,0 +1,148 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: student_performance_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-student_performance}
+      POSTGRES_USER: ${POSTGRES_USER:-student_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: student_performance_django
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-dev-only-key}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-student-performance}
+      MLFLOW_REGISTERED_MODEL_NAME: ${MLFLOW_REGISTERED_MODEL_NAME:-student-performance-best-model}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      POSTGRES_DB: ${POSTGRES_DB:-student_performance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_password}
+      POSTGRES_USER: ${POSTGRES_USER:-student_user}
+    ports:
+      - "${DJANGO_PORT:-8000}:8000"
+    volumes:
+      - .:/app
+    command: >
+      sh -c "
+        python manage.py migrate --noinput &&
+        python manage.py runserver 0.0.0.0:8000
+      "
+
+  mlflow:
+    build:
+      context: ./.mlflow
+      dockerfile: Dockerfile
+    container_name: student_performance_mlflow
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql+psycopg2://${POSTGRES_USER:-student_user}:${POSTGRES_PASSWORD:-student_password}@postgres:5432/${POSTGRES_DB:-student_performance}
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    volumes:
+      - mlflow_artifacts:/mlflow/artifacts
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/health').read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  airflow:
+    build:
+      context: .
+      dockerfile: ./.airflow/Dockerfile
+    container_name: student_performance_airflow
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    environment:
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL:-admin@example.com}
+      AIRFLOW_ADMIN_FIRSTNAME: ${AIRFLOW_ADMIN_FIRSTNAME:-Admin}
+      AIRFLOW_ADMIN_LASTNAME: ${AIRFLOW_ADMIN_LASTNAME:-User}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME:-admin}
+      AIRFLOW_BEST_MODEL_CONFIG: ${AIRFLOW_BEST_MODEL_CONFIG:-}
+      AIRFLOW_CV_SPLITS: ${AIRFLOW_CV_SPLITS:-3}
+      AIRFLOW_FEATURE_DIR: ${AIRFLOW_FEATURE_DIR:-data/feature}
+      AIRFLOW_MODEL_DIR: ${AIRFLOW_MODEL_DIR:-models}
+      AIRFLOW_PREPROCESSED_DIR: ${AIRFLOW_PREPROCESSED_DIR:-data/preprocessed}
+      AIRFLOW_RAW_DIR: ${AIRFLOW_RAW_DIR:-data/raw}
+      AIRFLOW_TUNING_DIR: ${AIRFLOW_TUNING_DIR:-models/tuning_optuna}
+      AIRFLOW_TUNING_TRIALS: ${AIRFLOW_TUNING_TRIALS:-3}
+      AIRFLOW_WEEKLY_CV_SPLITS: ${AIRFLOW_WEEKLY_CV_SPLITS:-}
+      AIRFLOW_WEEKLY_RETRAIN_SCHEDULE: "${AIRFLOW_WEEKLY_RETRAIN_SCHEDULE:-0 2 * * 1}"
+      AIRFLOW_WEEKLY_TUNING_TRIALS: ${AIRFLOW_WEEKLY_TUNING_TRIALS:-}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DJANGO_DEBUG: ${DJANGO_DEBUG:-True}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-django-insecure-dev-only-key}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      MLFLOW_EXPERIMENT_NAME: ${MLFLOW_EXPERIMENT_NAME:-student-performance}
+      MLFLOW_REGISTERED_MODEL_NAME: ${MLFLOW_REGISTERED_MODEL_NAME:-student-performance-best-model}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      POSTGRES_DB: ${POSTGRES_DB:-student_performance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-student_password}
+      POSTGRES_USER: ${POSTGRES_USER:-student_user}
+    ports:
+      - "${AIRFLOW_PORT:-8080}:8080"
+    volumes:
+      - ./.airflow/dags:/opt/airflow/dags
+      - ./.airflow/logs:/opt/airflow/logs
+      - ./.airflow/plugins:/opt/airflow/plugins
+      - .:/opt/airflow/project
+    command: >
+      bash -c "
+        airflow db migrate &&
+        (
+          airflow users create --username \"$${AIRFLOW_ADMIN_USERNAME}\" --password \"$${AIRFLOW_ADMIN_PASSWORD}\" --firstname \"$${AIRFLOW_ADMIN_FIRSTNAME}\" --lastname \"$${AIRFLOW_ADMIN_LASTNAME}\" --role Admin --email \"$${AIRFLOW_ADMIN_EMAIL}\" ||
+          airflow users reset-password --username \"$${AIRFLOW_ADMIN_USERNAME}\" --password \"$${AIRFLOW_ADMIN_PASSWORD}\"
+        );
+        airflow scheduler &
+        exec airflow webserver --port 8080
+      "
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+volumes:
+  postgres_data:
+  mlflow_artifacts:

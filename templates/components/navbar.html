@@ -1,0 +1,47 @@
+<header class="topbar">
+  <div class="d-flex align-items-center gap-2 min-w-0">
+    <button class="icon-btn d-lg-none" type="button" data-sidebar-toggle title="Open menu" aria-label="Open menu">
+      <i class="fa-solid fa-bars"></i>
+    </button>
+    <div class="min-w-0">
+      <p class="eyebrow mb-0">{{ active_role|title }} Workspace</p>
+      <h1 class="page-title mb-0">{{ page_title|default:"Dashboard" }}</h1>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button class="icon-btn" type="button" data-theme-toggle title="Toggle theme" aria-label="Toggle theme">
+      <i class="fa-solid fa-moon"></i>
+    </button>
+    <div class="dropdown">
+      <button class="icon-btn position-relative" type="button" data-bs-toggle="dropdown" title="Notifications" aria-label="Notifications">
+        <i class="fa-solid fa-bell"></i>
+        <span class="notify-dot"></span>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end notification-menu">
+        <div class="dropdown-header">Notifications</div>
+        <a class="dropdown-item" href="#">New prediction batch completed</a>
+        <a class="dropdown-item" href="#">Weekly report is ready</a>
+        <a class="dropdown-item" href="#">Model monitoring updated</a>
+      </div>
+    </div>
+    <div class="dropdown">
+      <button class="profile-chip" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <span class="avatar avatar-sm">
+          {% if user.profile.avatar %}
+            <img src="{{ user.profile.avatar }}" alt="">
+          {% else %}
+            {{ user.first_name|default:user.username|first|upper }}
+          {% endif %}
+        </span>
+        <span class="profile-name d-none d-md-inline">{{ user.get_full_name|default:user.username }}</span>
+        <i class="fa-solid fa-chevron-down"></i>
+      </button>
+      <div class="dropdown-menu dropdown-menu-end">
+        <a class="dropdown-item" href="{% url 'accounts:profile' %}"><i class="fa-solid fa-user"></i> Profile</a>
+        <a class="dropdown-item" href="{% url 'accounts:change_password' %}"><i class="fa-solid fa-key"></i> Change password</a>
+        <div class="dropdown-divider"></div>
+        <a class="dropdown-item text-danger" href="{% url 'accounts:logout' %}"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+      </div>
+    </div>
+  </div>
+</header>

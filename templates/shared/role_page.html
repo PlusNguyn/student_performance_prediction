@@ -1,0 +1,108 @@
+{% extends "base/layout.html" %}
+
+{% block content %}
+  <section class="content-band">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">{{ active_role|title }}</p>
+        <h2>{{ page_title }}</h2>
+      </div>
+      <div class="toolbar">
+        <button class="btn btn-outline-primary" type="button"><i class="fa-solid fa-download"></i> Export</button>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      {% for panel in panels %}
+        <article class="info-panel">
+          <i class="fa-solid {{ panel.icon }}"></i>
+          <h3>{{ panel.title }}</h3>
+          <p>{{ panel.body }}</p>
+        </article>
+      {% endfor %}
+    </div>
+
+    <div class="dashboard-grid mt-4">
+      <article class="panel panel-span-8">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Analytics</p>
+            <h3>{{ page_title }} trend</h3>
+          </div>
+        </div>
+        <div class="chart-box chart-tall"><canvas data-chart='{{ section_chart }}'></canvas></div>
+      </article>
+      <article class="panel panel-span-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Queue</p>
+            <h3>Priority items</h3>
+          </div>
+        </div>
+        <div class="stack-list">
+          <div class="alert-card alert-info">
+            <i class="fa-solid fa-circle-info"></i>
+            <div>
+              <strong>Data pipeline ready</strong>
+              <p>Connect this view to live records when APIs are available.</p>
+            </div>
+          </div>
+          <div class="alert-card alert-warning">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <div>
+              <strong>Review threshold</strong>
+              <p>Risk filters and alert rules are prepared for role access.</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <article class="panel mt-4">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Records</p>
+          <h3>{{ page_title }} table</h3>
+        </div>
+        <div class="table-tools">
+          <input class="form-control" type="search" placeholder="Search">
+          <select class="form-select">
+            <option>All statuses</option>
+            <option>Active</option>
+            <option>Warning</option>
+            <option>Archived</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table app-table align-middle">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Status</th>
+              <th>Score</th>
+              <th>Updated</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ page_title }} baseline</td>
+              <td><span class="status-pill status-success">Active</span></td>
+              <td>86</td>
+              <td>Today</td>
+              <td class="text-end"><button class="icon-btn" type="button" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
+            </tr>
+            <tr>
+              <td>{{ page_title }} review</td>
+              <td><span class="status-pill status-warning">Warning</span></td>
+              <td>64</td>
+              <td>Yesterday</td>
+              <td class="text-end"><button class="icon-btn" type="button" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+  </section>
+{% endblock %}
