@@ -548,6 +548,39 @@ a {
   font-weight: 800;
 }
 
+.prediction-result {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 150px;
+}
+
+.prediction-icon {
+  width: 72px;
+  height: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 72px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  font-size: 2rem;
+}
+
+.prediction-pass {
+  color: var(--green);
+}
+
+.prediction-fail {
+  color: var(--red);
+}
+
+.prediction-result h3 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 850;
+}
+
 .confidence-row {
   display: flex;
   justify-content: space-between;

@@ -4,7 +4,7 @@ from model_training.training import TrainingPaths, train_models
 
 
 class Command(BaseCommand):
-    help = "Train XGBoost and LightGBM models from generated feature files."
+    help = "Train classification and regression models from generated feature files."
 
     def add_arguments(self, parser):
         parser.add_argument("--feature-dir", default=None)
@@ -21,14 +21,26 @@ class Command(BaseCommand):
         summary = train_models(paths=paths, random_state=options["seed"])
 
         self.stdout.write(self.style.SUCCESS("Model training completed."))
-        for name, metrics in summary["metrics"].items():
-            self.stdout.write(
-                f"{name}: RMSE={metrics['rmse']:.4f} "
-                f"MAE={metrics['mae']:.4f} "
-                f"R2={metrics['r2']:.4f} "
-                f"Within10={metrics['within_10_percent']:.2%}"
-            )
-        self.stdout.write(f"Best model: {summary['best_model']}")
+        class_metrics = summary["metrics"]["classification"]
+        reg_metrics = summary["metrics"]["regression"]
+        self.stdout.write(
+            "Classification "
+            f"({summary['models']['classification']}): "
+            f"Accuracy={class_metrics['accuracy']:.4f} "
+            f"Precision={class_metrics['precision']:.4f} "
+            f"Recall={class_metrics['recall']:.4f} "
+            f"F1={class_metrics['f1']:.4f}"
+        )
+        if "roc_auc" in class_metrics:
+            self.stdout.write(f"Classification ROC-AUC={class_metrics['roc_auc']:.4f}")
+        self.stdout.write(
+            "Regression "
+            f"({summary['models']['regression']}): "
+            f"RMSE={reg_metrics['rmse']:.4f} "
+            f"MAE={reg_metrics['mae']:.4f} "
+            f"R2={reg_metrics['r2']:.4f} "
+            f"Within10={reg_metrics['within_10_percent']:.2%}"
+        )
         mlflow_status = summary["mlflow"]
         if mlflow_status.get("run_id"):
             self.stdout.write(
@@ -50,12 +62,19 @@ class Command(BaseCommand):
                 )
             )
         postgres_sync = summary["postgres_sync"]
-        self.stdout.write(
-            self.style.SUCCESS(
-                "Postgres sync: "
-                f"{len(postgres_sync['models'])} models, "
-                f"{len(postgres_sync['metadata'])} metadata files, "
-                f"{len(postgres_sync['explainers'])} explainers"
+        if postgres_sync.get("error"):
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Postgres sync skipped with error: {postgres_sync['error']}"
+                )
             )
-        )
+        else:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "Postgres sync: "
+                    f"{len(postgres_sync['models'])} models, "
+                    f"{len(postgres_sync['metadata'])} metadata files, "
+                    f"{len(postgres_sync['explainers'])} explainers"
+                )
+            )
         self.stdout.write(f"Model dir: {paths.model_dir}")

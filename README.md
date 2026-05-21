@@ -14,6 +14,21 @@ Build va chay giao dien Django kem Postgres:
 docker compose up --build django
 ```
 
+Neu Docker Hub bi loi khi pull `python:3.10-slim` voi thong bao EOF tu CloudFront,
+thu pull lai base image truoc:
+
+```powershell
+docker pull python:3.10-slim
+docker compose build --pull django mlflow
+```
+
+Hoac doi sang mirror trong `.env`:
+
+```env
+PYTHON_BASE_IMAGE=mirror.gcr.io/library/python:3.10-slim
+AIRFLOW_BASE_IMAGE=mirror.gcr.io/apache/airflow:2.10.5-python3.10
+```
+
 Mo giao dien:
 
 - Django UI: <http://localhost:8000>
@@ -31,9 +46,9 @@ docker compose up --build django mlflow airflow
 
 Project da co pipeline tu dong cho toan bo quy trinh ML:
 
-1. `preprocess_data`: tien xu ly du lieu raw va tao feature.
-2. `tune_best_model`: dung Optuna tune model tot hon.
-3. `train_models`: train model voi tham so tot nhat va log len MLflow.
+1. `preprocess_data`: tien xu ly du lieu raw theo notebook, tao feature cho classification/regression, tao bieu do va log artifact len MLflow neu MLflow dang chay.
+2. `tune_best_model`: buoc tune regression cu bang Optuna, co the chay rieng khi can.
+3. `train_models`: train 2 model chinh: classification `target_pass` va regression `learning_percentage`, sau do log len MLflow.
 4. `promote_best_model`: chon version co metric tot nhat va gan alias `production`.
 
 Chay cac service:
@@ -90,6 +105,13 @@ Pipeline khong luu raw data vao Postgres. Cac artifact sau duoc sync tu dong sau
 - `tuning_optuna_tuningartifact`: ket qua Optuna, best params va study file.
 - `model_training_trainedmodelartifact`: model binary, metrics, model selection va MLflow run id.
 - `mlflow_tracking_modelpromotion`: lich su model version duoc promote len alias `production`.
+
+Neu chay local ma Postgres hoac MLflow chua bat, command van tao file output local va se bao
+sync/tracking bi skip. Bat day du service bang:
+
+```powershell
+docker compose up -d postgres mlflow
+```
 
 Tao/cap nhat bang Django:
 

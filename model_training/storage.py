@@ -9,19 +9,18 @@ from model_training.models import TrainedModelArtifact
 
 
 MODEL_ARTIFACTS = {
-    "xgboost_model": "xgboost",
-    "lightgbm_model": "lightgbm",
-    "best_model": "",
+    "classification_model": "classification",
+    "regression_model": "regression",
 }
 METADATA_ARTIFACTS = {
     "metrics",
     "model_selection",
+    "classification_report",
+    "confusion_matrix",
     "features",
     "medians",
 }
-EXPLAINER_ARTIFACTS = {
-    "xgboost_explainer": "xgboost",
-}
+EXPLAINER_ARTIFACTS = {}
 
 
 def sync_training_outputs_to_postgres(
@@ -54,7 +53,7 @@ def sync_training_outputs_to_postgres(
                     "model_selection": model_selection,
                 },
                 mlflow_tracking=mlflow_tracking,
-                is_best=name == "best_model" or model_name == best_model_name,
+                is_best=name in MODEL_ARTIFACTS,
             )
             synced["models"].append(name)
             continue
@@ -150,13 +149,12 @@ def _model_parameters(
     model_selection: dict[str, Any],
     model_name: str,
 ) -> dict[str, Any]:
-    tuning_config = model_selection.get("tuning_config") or {}
-    model_results = tuning_config.get("models") or {}
-    if model_name in model_results:
-        return model_results[model_name].get("best_params", {})
-    if tuning_config.get("best_model") == model_name:
-        return tuning_config.get("best_params", {})
-    return {}
+    training_config = model_selection.get("training_config") or {}
+    if model_name == "classification":
+        return training_config.get("classification_model_params", {})
+    if model_name == "regression":
+        return training_config.get("regression_model_params", {})
+    return training_config.get(model_name, {})
 
 
 def _read_json_if_available(path: Path) -> Any:

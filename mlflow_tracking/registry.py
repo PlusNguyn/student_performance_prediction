@@ -7,6 +7,9 @@ from django.conf import settings
 
 
 DEFAULT_METRIC_CANDIDATES = (
+    "regression.rmse",
+    "classification.f1",
+    "classification.accuracy",
     "best_model.rmse",
     "lightgbm.rmse",
     "xgboost.rmse",

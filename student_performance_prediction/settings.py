@@ -106,6 +106,9 @@ else:
             'PASSWORD': os.getenv('POSTGRES_PASSWORD', 'student_password'),
             'HOST': os.getenv('DB_HOST', 'localhost'),
             'PORT': os.getenv('DB_PORT', os.getenv('POSTGRES_PORT', '5432')),
+            'OPTIONS': {
+                'connect_timeout': int(os.getenv('POSTGRES_CONNECT_TIMEOUT', '5')),
+            },
         }
     }
 

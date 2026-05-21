@@ -16,23 +16,46 @@ from preprocessing.models import (
 
 
 PREPROCESSED_DATASETS = {
+    "students_labeled",
+    "student_registration_cleaned",
     "vle_features",
     "assessment_features",
+    "modeling_dataset",
     "preprocessed_dataset",
 }
 FEATURE_DATASETS = {
     "X",
     "y",
+    "X_class",
+    "y_class",
+    "X_reg",
+    "y_reg",
     "X_train",
     "X_test",
     "y_train",
     "y_test",
+    "X_train_class",
+    "X_test_class",
+    "y_train_class",
+    "y_test_class",
+    "X_train_reg",
+    "X_test_reg",
+    "y_train_reg",
+    "y_test_reg",
 }
 FEATURE_FILE_ARTIFACTS = {
     "feature_columns",
+    "classification_feature_columns",
+    "regression_feature_columns",
     "medians",
     "metadata",
     "encoders",
+    "category_levels",
+    "preprocessing_profile",
+    "final_result_distribution",
+    "pass_fail_distribution",
+    "learning_percentage_distribution",
+    "feature_correlation",
 }
 
 

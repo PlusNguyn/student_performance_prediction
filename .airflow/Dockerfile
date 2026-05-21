@@ -1,4 +1,5 @@
-FROM apache/airflow:2.10.5-python3.10
+ARG AIRFLOW_BASE_IMAGE=apache/airflow:2.10.5-python3.10
+FROM ${AIRFLOW_BASE_IMAGE}
 
 USER root
 
@@ -10,4 +11,4 @@ RUN apt-get update \
 USER airflow
 
 COPY .airflow/requirements.txt /tmp/airflow-project-requirements.txt
-RUN pip install --no-cache-dir -r /tmp/airflow-project-requirements.txt
+RUN pip install --prefer-binary --no-cache-dir -r /tmp/airflow-project-requirements.txt

@@ -18,6 +18,12 @@ from .forms import (
     RegisterForm,
     StyledPasswordChangeForm,
 )
+from .demo_predictions import (
+    DemoPredictionError,
+    get_demo_summary,
+    get_lecturer_predictions,
+    get_student_prediction,
+)
 from .models import UserProfile
 
 
@@ -166,140 +172,116 @@ def change_password_view(request):
         },
     )
 
-
-def student_dashboard_data(student_id):
-    return {
-        'student_id': student_id,
-        'kpis': [
-            {'label': 'Knowledge absorption', 'value': '82%', 'trend': '+6.4%', 'icon': 'fa-brain', 'tone': 'primary'},
-            {'label': 'Learning score', 'value': '7.8', 'trend': '+0.5', 'icon': 'fa-chart-line', 'tone': 'success'},
-            {'label': 'Risk level', 'value': 'Medium', 'trend': 'Watch', 'icon': 'fa-triangle-exclamation', 'tone': 'warning'},
-            {'label': 'Engagement score', 'value': '74', 'trend': '-3 pts', 'icon': 'fa-bolt', 'tone': 'info'},
-        ],
-        'status': {
-            'label': 'Predicted learning status',
-            'value': 'On track with intervention',
-            'confidence': '88%',
-            'description': 'Assignment timing and quiz variance are the strongest current signals.',
-        },
-        'alerts': [
-            {'title': 'Interaction is decreasing', 'body': 'Your activity dropped across the latest two sessions.', 'tone': 'warning'},
-            {'title': 'Finish assignments earlier', 'body': 'Submitting 24 hours earlier can improve the forecasted score.', 'tone': 'info'},
-            {'title': 'Quiz recovery window', 'body': 'Two focused quiz reviews this week are recommended.', 'tone': 'success'},
-        ],
-        'recommendations': [
-            {'title': 'Review weak topics', 'body': 'Spend 30 minutes on unit 4 videos before the next quiz.', 'impact': 'High impact'},
-            {'title': 'Stabilize schedule', 'body': 'Keep at least four active learning days this week.', 'impact': 'Medium impact'},
-            {'title': 'Ask for feedback', 'body': 'Request lecturer comments on the last assignment attempt.', 'impact': 'Medium impact'},
-        ],
-        'history': [
-            {'date': 'May 13', 'event': 'Prediction updated', 'detail': 'Risk changed from High to Medium'},
-            {'date': 'May 15', 'event': 'Quiz completed', 'detail': 'Score 78%, +9 points from previous quiz'},
-            {'date': 'May 18', 'event': 'Assignment submitted', 'detail': 'Submitted 8 hours before deadline'},
-        ],
-        'feature_rows': [
-            {'feature': 'Quiz average', 'weight': '28%', 'direction': 'Positive'},
-            {'feature': 'Late submissions', 'weight': '22%', 'direction': 'Negative'},
-            {'feature': 'Weekly activity', 'weight': '19%', 'direction': 'Positive'},
-            {'feature': 'Forum engagement', 'weight': '13%', 'direction': 'Neutral'},
-        ],
-        'heatmap': [3, 5, 4, 1, 6, 7, 2, 4, 6, 3, 2, 7, 5, 4, 3, 6, 4, 2, 1, 5, 7, 6, 3, 4, 5, 6, 2, 3],
-        'charts': {
-            'learning': chart_config({
-                'type': 'line',
-                'data': {
-                    'labels': ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8'],
-                    'datasets': [
-                        {'label': 'Learning score', 'data': [62, 66, 64, 70, 74, 73, 79, 82], 'borderColor': '#2563eb', 'backgroundColor': 'rgba(37,99,235,.16)', 'fill': True, 'tension': .42},
-                        {'label': 'Engagement', 'data': [78, 76, 72, 75, 79, 77, 75, 74], 'borderColor': '#14b8a6', 'backgroundColor': 'rgba(20,184,166,.12)', 'fill': True, 'tension': .42},
-                    ],
-                },
-                'options': {'plugins': {'legend': {'display': True}}, 'scales': {'y': {'min': 40, 'max': 100}}},
-            }),
-            'quiz': chart_config({
-                'type': 'bar',
-                'data': {
-                    'labels': ['Quiz 1', 'Quiz 2', 'Quiz 3', 'Quiz 4', 'Quiz 5'],
-                    'datasets': [{'label': 'Score', 'data': [68, 74, 71, 79, 83], 'backgroundColor': ['#60a5fa', '#2dd4bf', '#f59e0b', '#818cf8', '#34d399']}],
-                },
-                'options': {'plugins': {'legend': {'display': False}}, 'scales': {'y': {'min': 0, 'max': 100}}},
-            }),
-            'assignment': chart_config({
-                'type': 'doughnut',
-                'data': {
-                    'labels': ['Completed', 'Pending', 'Late'],
-                    'datasets': [{'data': [76, 14, 10], 'backgroundColor': ['#22c55e', '#f59e0b', '#ef4444'], 'borderWidth': 0}],
-                },
-                'options': {'cutout': '72%', 'plugins': {'legend': {'position': 'bottom'}}},
-            }),
-        },
-    }
-
-
 @role_required(UserProfile.STUDENT)
 def student_dashboard(request):
     profile = get_profile(request.user)
-    student_id = request.GET.get('student_id') or (profile.account_code if profile and profile.role == UserProfile.STUDENT else '')
+    student_id = profile.account_code if profile and profile.role == UserProfile.STUDENT else ''
     context = {
         'page_title': 'Student Dashboard',
         'active_role': UserProfile.STUDENT,
         'active_section': 'dashboard',
         'student_id': student_id,
     }
-    if student_id:
-        context['dashboard'] = student_dashboard_data(student_id)
-    else:
-        context['empty_message'] = 'Enter a student ID to view predictions and analytics.'
+    if not student_id:
+        context['empty_message'] = 'Your profile does not have a Student ID yet.'
+        return render(request, 'student/dashboard.html', context)
+
+    try:
+        prediction = get_student_prediction(student_id)
+    except DemoPredictionError as exc:
+        context['empty_message'] = str(exc)
+        return render(request, 'student/dashboard.html', context)
+
+    if not prediction:
+        context['empty_message'] = (
+            'No demo prediction was found for your Student ID. '
+            'Ask an administrator to map your profile to an ID in data/demo.'
+        )
+        return render(request, 'student/dashboard.html', context)
+
+    context['prediction'] = prediction
+    context['kpis'] = [
+        {'label': 'Student ID', 'value': prediction['student_id'], 'trend': prediction['code_module'], 'icon': 'fa-id-card', 'tone': 'primary'},
+        {'label': 'Prediction', 'value': prediction['prediction_label'], 'trend': f"{prediction['confidence']}% confidence", 'icon': 'fa-wand-magic-sparkles', 'tone': 'success' if prediction['prediction_value'] else 'danger'},
+        {'label': 'Learning percentage', 'value': f"{prediction['learning_percentage']}%", 'trend': prediction['code_presentation'], 'icon': 'fa-chart-line', 'tone': 'info'},
+        {'label': 'Risk level', 'value': prediction['risk'], 'trend': 'Model output', 'icon': 'fa-triangle-exclamation', 'tone': {'High': 'danger', 'Medium': 'warning', 'Low': 'success'}[prediction['risk']]},
+    ]
     return render(request, 'student/dashboard.html', context)
 
 
 @role_required(UserProfile.LECTURER)
 def lecturer_dashboard(request):
+    try:
+        students = get_lecturer_predictions()
+        summary = get_demo_summary()
+        prediction_error = ''
+    except DemoPredictionError as exc:
+        students = []
+        summary = {'total': 0, 'high_risk': 0, 'medium_risk': 0, 'passed': 0, 'pass_rate': '0.0%', 'avg_learning': 0, 'avg_confidence': 0}
+        prediction_error = str(exc)
+
+    risk_counts = {
+        'Low': sum(1 for student in students if student['risk'] == 'Low'),
+        'Medium': sum(1 for student in students if student['risk'] == 'Medium'),
+        'High': sum(1 for student in students if student['risk'] == 'High'),
+    }
+    learning_buckets = _learning_buckets(students)
     context = {
         'page_title': 'Lecturer Dashboard',
         'active_role': UserProfile.LECTURER,
         'active_section': 'dashboard',
         'kpis': [
-            {'label': 'Total students', 'value': '248', 'trend': '+12 this term', 'icon': 'fa-users', 'tone': 'primary'},
-            {'label': 'High risk', 'value': '31', 'trend': '-8%', 'icon': 'fa-triangle-exclamation', 'tone': 'danger'},
-            {'label': 'Class absorption', 'value': '78%', 'trend': '+4%', 'icon': 'fa-graduation-cap', 'tone': 'success'},
-            {'label': 'Course completion', 'value': '69%', 'trend': '+7%', 'icon': 'fa-list-check', 'tone': 'info'},
+            {'label': 'Demo students', 'value': summary['total'], 'trend': 'data/demo', 'icon': 'fa-users', 'tone': 'primary'},
+            {'label': 'High risk', 'value': summary['high_risk'], 'trend': f"{summary['medium_risk']} medium", 'icon': 'fa-triangle-exclamation', 'tone': 'danger'},
+            {'label': 'Avg learning', 'value': f"{summary['avg_learning']}%", 'trend': 'Predicted', 'icon': 'fa-graduation-cap', 'tone': 'success'},
+            {'label': 'Pass rate', 'value': summary['pass_rate'], 'trend': f"{summary['avg_confidence']}% confidence", 'icon': 'fa-list-check', 'tone': 'info'},
         ],
-        'weak_students': [
-            {'name': 'Nguyen Minh Anh', 'student_id': 'SV1024', 'risk': 'High', 'score': 51, 'engagement': 42},
-            {'name': 'Tran Quoc Bao', 'student_id': 'SV1108', 'risk': 'High', 'score': 48, 'engagement': 39},
-            {'name': 'Le Thanh Ha', 'student_id': 'SV1201', 'risk': 'Medium', 'score': 58, 'engagement': 55},
-            {'name': 'Pham Gia Huy', 'student_id': 'SV1302', 'risk': 'Medium', 'score': 62, 'engagement': 57},
-        ],
+        'students': students,
+        'prediction_error': prediction_error,
         'alerts': [
-            {'title': '31 students need attention', 'body': 'Prioritize students with low attendance and declining quiz trend.', 'tone': 'danger'},
-            {'title': 'Assignment delay spike', 'body': 'Late submissions increased in module 5.', 'tone': 'warning'},
-            {'title': 'Model summary', 'body': 'Production model accuracy is stable at 91.8%.', 'tone': 'success'},
+            {'title': f"{summary['high_risk']} students need attention", 'body': 'Prioritize high-risk students from the demo prediction table.', 'tone': 'danger'},
+            {'title': 'Demo data connected', 'body': 'Rows are loaded from data/demo and scored with local model artifacts.', 'tone': 'info'},
+            {'title': 'Student privacy', 'body': 'Student accounts only receive their own profile prediction.', 'tone': 'success'},
         ],
         'charts': {
             'engagement': chart_config({
                 'type': 'bar',
-                'data': {'labels': ['0-20', '21-40', '41-60', '61-80', '81-100'], 'datasets': [{'label': 'Students', 'data': [8, 26, 61, 97, 56], 'backgroundColor': '#2563eb'}]},
+                'data': {'labels': list(learning_buckets.keys()), 'datasets': [{'label': 'Students', 'data': list(learning_buckets.values()), 'backgroundColor': '#2563eb'}]},
                 'options': {'plugins': {'legend': {'display': False}}},
             }),
             'activity': chart_config({
                 'type': 'line',
-                'data': {'labels': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'], 'datasets': [{'label': 'Learning sessions', 'data': [420, 510, 498, 620, 588, 361, 292], 'borderColor': '#14b8a6', 'backgroundColor': 'rgba(20,184,166,.14)', 'fill': True, 'tension': .4}]},
+                'data': {'labels': [student['student_id'] for student in students[:12]], 'datasets': [{'label': 'Learning %', 'data': [student['learning_percentage'] for student in students[:12]], 'borderColor': '#14b8a6', 'backgroundColor': 'rgba(20,184,166,.14)', 'fill': True, 'tension': .4}]},
                 'options': {'plugins': {'legend': {'display': False}}},
             }),
             'risk': chart_config({
                 'type': 'pie',
-                'data': {'labels': ['Low', 'Medium', 'High'], 'datasets': [{'data': [139, 78, 31], 'backgroundColor': ['#22c55e', '#f59e0b', '#ef4444'], 'borderWidth': 0}]},
+                'data': {'labels': ['Low', 'Medium', 'High'], 'datasets': [{'data': [risk_counts['Low'], risk_counts['Medium'], risk_counts['High']], 'backgroundColor': ['#22c55e', '#f59e0b', '#ef4444'], 'borderWidth': 0}]},
                 'options': {'plugins': {'legend': {'position': 'bottom'}}},
             }),
             'model': chart_config({
-                'type': 'radar',
-                'data': {'labels': ['Accuracy', 'Precision', 'Recall', 'F1', 'AUC'], 'datasets': [{'label': 'Production', 'data': [92, 89, 87, 88, 94], 'borderColor': '#6366f1', 'backgroundColor': 'rgba(99,102,241,.18)'}]},
-                'options': {'scales': {'r': {'min': 70, 'max': 100}}},
+                'type': 'bar',
+                'data': {'labels': ['Pass', 'Fail/Withdrawn'], 'datasets': [{'label': 'Students', 'data': [summary['passed'], max(summary['total'] - summary['passed'], 0)], 'backgroundColor': ['#22c55e', '#ef4444']}]},
+                'options': {'plugins': {'legend': {'display': False}}},
             }),
         },
     }
     return render(request, 'lecturer/dashboard.html', context)
+
+
+def _learning_buckets(students):
+    buckets = {'0-49': 0, '50-69': 0, '70-84': 0, '85-100': 0}
+    for student in students:
+        value = student['learning_percentage']
+        if value < 50:
+            buckets['0-49'] += 1
+        elif value < 70:
+            buckets['50-69'] += 1
+        elif value < 85:
+            buckets['70-84'] += 1
+        else:
+            buckets['85-100'] += 1
+    return buckets
 
 
 @role_required(UserProfile.ADMIN)

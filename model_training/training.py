@@ -11,13 +11,27 @@ import joblib
 import numpy as np
 import pandas as pd
 from django.conf import settings
-from lightgbm import LGBMRegressor
-from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
-from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    mean_absolute_error,
+    precision_score,
+    r2_score,
+    recall_score,
+    roc_auc_score,
+    root_mean_squared_error,
+)
 
 
 SEED = 42
-TARGET_COLUMN = "learning_percentage"
+TARGET_CLASS_COLUMN = "target_pass"
+TARGET_REGRESSION_COLUMN = "learning_percentage"
+TARGET_COLUMN = TARGET_REGRESSION_COLUMN
+CLASSIFICATION_MODEL_NAME = "random_forest_classifier"
+REGRESSION_MODEL_NAME = "random_forest_regressor"
 
 
 @dataclass(frozen=True)
@@ -48,88 +62,121 @@ def train_models(
     paths = paths or TrainingPaths.from_defaults()
     paths.model_dir.mkdir(parents=True, exist_ok=True)
 
-    X_train, X_test, y_train, y_test = load_feature_splits(paths.feature_dir)
+    splits = load_feature_splits(paths.feature_dir)
     feature_columns = _read_json(paths.feature_dir / "feature_columns.json")
     medians = _read_json(paths.feature_dir / "medians.json")
-    tuning_config = load_tuning_config(paths.params_path)
+    training_config = load_training_config(paths.params_path)
 
-    xgb = XGBRegressor(**_xgboost_params(tuning_config, random_state))
-    xgb.fit(X_train, y_train)
+    classifier = RandomForestClassifier(
+        **_classification_params(training_config, random_state)
+    )
+    classifier.fit(splits["X_train_class"], splits["y_train_class"])
 
-    lgbm = LGBMRegressor(**_lightgbm_params(tuning_config, random_state))
-    lgbm.fit(X_train, y_train)
+    regressor = RandomForestRegressor(
+        **_regression_params(training_config, random_state)
+    )
+    regressor.fit(splits["X_train_reg"], splits["y_train_reg"])
 
+    class_predictions = classifier.predict(splits["X_test_class"])
+    reg_predictions = np.clip(
+        regressor.predict(splits["X_test_reg"]),
+        0,
+        100,
+    )
     metrics = {
-        "xgboost": evaluate_model(xgb, X_test, y_test),
-        "lightgbm": evaluate_model(lgbm, X_test, y_test),
+        "classification": evaluate_classifier(
+            classifier,
+            splits["X_test_class"],
+            splits["y_test_class"],
+            class_predictions,
+        ),
+        "regression": evaluate_regressor(
+            splits["y_test_reg"],
+            reg_predictions,
+        ),
     }
-    best_model_name = min(metrics, key=lambda name: metrics[name]["rmse"])
-    best_model = {"xgboost": xgb, "lightgbm": lgbm}[best_model_name]
+    report = classification_report(
+        splits["y_test_class"],
+        class_predictions,
+        output_dict=True,
+        zero_division=0,
+    )
+    confusion = confusion_matrix(splits["y_test_class"], class_predictions).tolist()
     model_selection = {
-        "best_model": best_model_name,
-        "selection_metric": "rmse",
-        "best_rmse": metrics[best_model_name]["rmse"],
-        "target_column": TARGET_COLUMN,
-        "tuning_config": tuning_config,
+        "task": "classification_and_regression",
+        "classification_model": CLASSIFICATION_MODEL_NAME,
+        "regression_model": REGRESSION_MODEL_NAME,
+        "classification_target": TARGET_CLASS_COLUMN,
+        "regression_target": TARGET_REGRESSION_COLUMN,
+        "classification_selection_metric": "f1",
+        "regression_selection_metric": "rmse",
+        "training_config": training_config,
     }
 
     output_paths = {
-        "xgboost_model": paths.model_dir / "xgboost_model.joblib",
-        "lightgbm_model": paths.model_dir / "lightgbm_model.joblib",
-        "best_model": paths.model_dir / "best_model.joblib",
+        "classification_model": paths.model_dir / "classification_model.joblib",
+        "regression_model": paths.model_dir / "regression_model.joblib",
         "metrics": paths.model_dir / "model_metrics.json",
         "model_selection": paths.model_dir / "model_selection.json",
+        "classification_report": paths.model_dir / "classification_report.json",
+        "confusion_matrix": paths.model_dir / "confusion_matrix.json",
         "features": paths.model_dir / "features.json",
         "medians": paths.model_dir / "medians.json",
     }
-    joblib.dump(xgb, output_paths["xgboost_model"])
-    joblib.dump(lgbm, output_paths["lightgbm_model"])
-    joblib.dump(best_model, output_paths["best_model"])
+    joblib.dump(classifier, output_paths["classification_model"])
+    joblib.dump(regressor, output_paths["regression_model"])
     _write_json(output_paths["metrics"], metrics)
     _write_json(output_paths["model_selection"], model_selection)
+    _write_json(output_paths["classification_report"], report)
+    _write_json(
+        output_paths["confusion_matrix"],
+        {
+            "labels": ["fail_or_withdrawn", "pass_or_distinction"],
+            "matrix": confusion,
+        },
+    )
     _write_json(output_paths["features"], feature_columns)
     _write_json(output_paths["medians"], medians)
 
-    shap_explainer_path = save_shap_explainer_if_available(xgb, paths.model_dir)
-    if shap_explainer_path:
-        output_paths["xgboost_explainer"] = shap_explainer_path
-
     mlflow_tracking = log_training_to_mlflow(
-        models={"xgboost": xgb, "lightgbm": lgbm},
-        best_model_name=best_model_name,
+        classifier=classifier,
+        regressor=regressor,
         metrics=metrics,
-        tuning_config=tuning_config,
         model_selection=model_selection,
         feature_columns=feature_columns,
         output_paths=output_paths,
         model_dir=paths.model_dir,
         random_state=random_state,
     )
-    postgres_sync = _sync_training_outputs_to_postgres(
+    postgres_sync = _safe_sync_training_outputs_to_postgres(
         output_paths=output_paths,
         metrics=metrics,
-        best_model_name=best_model_name,
         model_selection=model_selection,
         mlflow_tracking=mlflow_tracking,
     )
 
     return {
         "metrics": metrics,
-        "best_model": best_model_name,
+        "models": {
+            "classification": CLASSIFICATION_MODEL_NAME,
+            "regression": REGRESSION_MODEL_NAME,
+        },
         "mlflow": mlflow_tracking,
         "postgres_sync": postgres_sync,
         "paths": {name: str(path) for name, path in output_paths.items()},
     }
 
 
-def load_feature_splits(
-    feature_dir: Path,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+def load_feature_splits(feature_dir: Path) -> dict[str, pd.DataFrame | pd.Series]:
     required_files = [
-        "X_train.csv",
-        "X_test.csv",
-        "y_train.csv",
-        "y_test.csv",
+        "X_train_class.csv",
+        "X_test_class.csv",
+        "y_train_class.csv",
+        "y_test_class.csv",
+        "X_train_reg.csv",
+        "X_test_reg.csv",
+        "y_train_reg.csv",
+        "y_test_reg.csv",
         "feature_columns.json",
         "medians.json",
     ]
@@ -141,16 +188,48 @@ def load_feature_splits(
             "Run `python manage.py preprocess_data` first."
         )
 
-    X_train = pd.read_csv(feature_dir / "X_train.csv")
-    X_test = pd.read_csv(feature_dir / "X_test.csv")
-    target_column = _target_column(feature_dir)
-    y_train = pd.read_csv(feature_dir / "y_train.csv")[target_column].astype(float)
-    y_test = pd.read_csv(feature_dir / "y_test.csv")[target_column].astype(float)
-    return X_train, X_test, y_train, y_test
+    return {
+        "X_train_class": pd.read_csv(feature_dir / "X_train_class.csv"),
+        "X_test_class": pd.read_csv(feature_dir / "X_test_class.csv"),
+        "y_train_class": pd.read_csv(feature_dir / "y_train_class.csv")[
+            TARGET_CLASS_COLUMN
+        ].astype(int),
+        "y_test_class": pd.read_csv(feature_dir / "y_test_class.csv")[
+            TARGET_CLASS_COLUMN
+        ].astype(int),
+        "X_train_reg": pd.read_csv(feature_dir / "X_train_reg.csv"),
+        "X_test_reg": pd.read_csv(feature_dir / "X_test_reg.csv"),
+        "y_train_reg": pd.read_csv(feature_dir / "y_train_reg.csv")[
+            TARGET_REGRESSION_COLUMN
+        ].astype(float),
+        "y_test_reg": pd.read_csv(feature_dir / "y_test_reg.csv")[
+            TARGET_REGRESSION_COLUMN
+        ].astype(float),
+    }
 
 
-def evaluate_model(model: Any, X_test: pd.DataFrame, y_test: pd.Series) -> dict[str, float]:
-    predictions = np.clip(model.predict(X_test), 0, 100)
+def evaluate_classifier(
+    model: RandomForestClassifier,
+    X_test: pd.DataFrame,
+    y_test: pd.Series,
+    predictions: np.ndarray,
+) -> dict[str, float]:
+    metrics = {
+        "accuracy": float(accuracy_score(y_test, predictions)),
+        "precision": float(precision_score(y_test, predictions, zero_division=0)),
+        "recall": float(recall_score(y_test, predictions, zero_division=0)),
+        "f1": float(f1_score(y_test, predictions, zero_division=0)),
+    }
+    if y_test.nunique() > 1 and hasattr(model, "predict_proba"):
+        probabilities = model.predict_proba(X_test)[:, 1]
+        metrics["roc_auc"] = float(roc_auc_score(y_test, probabilities))
+    return metrics
+
+
+def evaluate_regressor(
+    y_test: pd.Series,
+    predictions: np.ndarray,
+) -> dict[str, float]:
     errors = np.abs(predictions - y_test)
     return {
         "rmse": float(root_mean_squared_error(y_test, predictions)),
@@ -160,24 +239,11 @@ def evaluate_model(model: Any, X_test: pd.DataFrame, y_test: pd.Series) -> dict[
     }
 
 
-def save_shap_explainer_if_available(model: XGBRegressor, model_dir: Path) -> Path | None:
-    try:
-        import shap
-    except ImportError:
-        return None
-
-    explainer = shap.TreeExplainer(model)
-    path = model_dir / "xgboost_explainer.joblib"
-    joblib.dump(explainer, path)
-    return path
-
-
 def log_training_to_mlflow(
     *,
-    models: dict[str, Any],
-    best_model_name: str,
+    classifier: RandomForestClassifier,
+    regressor: RandomForestRegressor,
     metrics: dict[str, dict[str, float]],
-    tuning_config: dict[str, Any] | None,
     model_selection: dict[str, Any],
     feature_columns: list[str],
     output_paths: dict[str, Path],
@@ -194,6 +260,12 @@ def log_training_to_mlflow(
     except ImportError as exc:
         return {"enabled": False, "reason": f"MLflow is not installed: {exc}"}
 
+    registered_base_name = settings.MLFLOW_REGISTERED_MODEL_NAME
+    registered_model_names = {
+        "classification": f"{registered_base_name}-classification",
+        "regression": f"{registered_base_name}-regression",
+    }
+
     try:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
             io.StringIO()
@@ -201,39 +273,43 @@ def log_training_to_mlflow(
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
 
-            with mlflow.start_run(run_name=f"train-{best_model_name}") as run:
-                mlflow.log_param("best_model", best_model_name)
-                mlflow.log_param("selection_metric", model_selection["selection_metric"])
+            with mlflow.start_run(run_name="train-classification-regression") as run:
+                mlflow.log_param("task", model_selection["task"])
+                mlflow.log_param(
+                    "classification_model",
+                    model_selection["classification_model"],
+                )
+                mlflow.log_param("regression_model", model_selection["regression_model"])
                 mlflow.log_param("random_state", random_state)
                 mlflow.log_param("feature_count", len(feature_columns))
-                mlflow.log_param("target_column", TARGET_COLUMN)
+                mlflow.log_param("classification_target", TARGET_CLASS_COLUMN)
+                mlflow.log_param("regression_target", TARGET_REGRESSION_COLUMN)
+                _log_estimator_params(mlflow, "classification", classifier)
+                _log_estimator_params(mlflow, "regression", regressor)
 
-                if tuning_config:
-                    mlflow.log_param("tuning.best_model", tuning_config.get("best_model"))
-                    mlflow.log_param("tuning.scoring", tuning_config.get("scoring"))
-                    mlflow.log_param("tuning.cv_splits", tuning_config.get("cv_splits"))
-                    mlflow.log_param(
-                        "tuning.n_trials_per_model",
-                        tuning_config.get("n_trials_per_model"),
-                    )
-                    _log_model_params(mlflow, tuning_config)
+                for task_name, task_metrics in metrics.items():
+                    for metric_name, value in task_metrics.items():
+                        mlflow.log_metric(f"{task_name}.{metric_name}", value)
 
-                _log_estimator_params(mlflow, models)
-
-                for model_name, model_metrics in metrics.items():
-                    for metric_name, value in model_metrics.items():
-                        mlflow.log_metric(f"{model_name}.{metric_name}", value)
-                for metric_name, value in metrics[best_model_name].items():
-                    mlflow.log_metric(f"best_model.{metric_name}", value)
-
-                for artifact_name in ["metrics", "model_selection", "features", "medians"]:
+                for artifact_name in [
+                    "metrics",
+                    "model_selection",
+                    "classification_report",
+                    "confusion_matrix",
+                    "features",
+                    "medians",
+                ]:
                     mlflow.log_artifact(str(output_paths[artifact_name]))
 
-                mlflow.log_artifacts(str(model_dir), artifact_path="local_artifacts")
                 mlflow.sklearn.log_model(
-                    sk_model=models[best_model_name],
-                    artifact_path="best_model",
-                    registered_model_name=settings.MLFLOW_REGISTERED_MODEL_NAME,
+                    sk_model=classifier,
+                    artifact_path="classification_model",
+                    registered_model_name=registered_model_names["classification"],
+                )
+                mlflow.sklearn.log_model(
+                    sk_model=regressor,
+                    artifact_path="regression_model",
+                    registered_model_name=registered_model_names["regression"],
                 )
 
                 return {
@@ -241,7 +317,8 @@ def log_training_to_mlflow(
                     "run_id": run.info.run_id,
                     "experiment_id": run.info.experiment_id,
                     "tracking_uri": tracking_uri,
-                    "registered_model_name": settings.MLFLOW_REGISTERED_MODEL_NAME,
+                    "registered_model_names": registered_model_names,
+                    "registered_model_name": ",".join(registered_model_names.values()),
                 }
     except Exception as exc:
         return {
@@ -251,113 +328,76 @@ def log_training_to_mlflow(
         }
 
 
-def load_tuning_config(params_path: Path | None) -> dict[str, Any] | None:
+def load_training_config(params_path: Path | None) -> dict[str, Any] | None:
     if not params_path or not params_path.exists():
         return None
-
-    payload = _read_json(params_path)
-    if "best_model" in payload and "best_params" in payload:
-        return payload
-
-    return {
-        "best_model": "xgboost",
-        "best_params": payload,
-        "source": "legacy_xgboost_params",
-    }
+    return _read_json(params_path)
 
 
-def _xgboost_params(
-    tuning_config: dict[str, Any] | None,
+def _classification_params(
+    training_config: dict[str, Any] | None,
     random_state: int,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
-        "n_estimators": 300,
-        "max_depth": 5,
-        "learning_rate": 0.05,
-        "subsample": 0.9,
-        "colsample_bytree": 0.9,
-        "objective": "reg:squarederror",
-        "eval_metric": "rmse",
+        "n_estimators": 200,
+        "max_depth": None,
+        "min_samples_leaf": 1,
+        "class_weight": "balanced",
         "random_state": random_state,
         "n_jobs": -1,
     }
-    params.update(_model_tuned_params(tuning_config, "xgboost"))
+    params.update((training_config or {}).get("classification_model_params", {}))
     return params
 
 
-def _lightgbm_params(
-    tuning_config: dict[str, Any] | None,
+def _regression_params(
+    training_config: dict[str, Any] | None,
     random_state: int,
 ) -> dict[str, Any]:
     params: dict[str, Any] = {
-        "n_estimators": 300,
-        "learning_rate": 0.05,
-        "objective": "regression",
+        "n_estimators": 200,
+        "max_depth": None,
+        "min_samples_leaf": 1,
         "random_state": random_state,
         "n_jobs": -1,
-        "verbose": -1,
     }
-    params.update(_model_tuned_params(tuning_config, "lightgbm"))
+    params.update((training_config or {}).get("regression_model_params", {}))
     return params
 
 
-def _model_tuned_params(
-    tuning_config: dict[str, Any] | None,
-    model_name: str,
-) -> dict[str, Any]:
-    if not tuning_config:
-        return {}
-
-    model_results = tuning_config.get("models", {})
-    if model_name in model_results:
-        return model_results[model_name]["best_params"]
-
-    if tuning_config["best_model"] == model_name:
-        return tuning_config["best_params"]
-
-    return {}
+def _log_estimator_params(mlflow_module: Any, prefix: str, model: Any) -> None:
+    for key, value in model.get_params().items():
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            mlflow_module.log_param(f"{prefix}.{key}", value)
 
 
-def _log_model_params(mlflow_module: Any, tuning_config: dict[str, Any]) -> None:
-    model_results = tuning_config.get("models")
-    if model_results:
-        for model_name, result in model_results.items():
-            for key, value in result.get("best_params", {}).items():
-                mlflow_module.log_param(f"{model_name}.{key}", value)
-        return
-
-    best_model = tuning_config.get("best_model")
-    for key, value in tuning_config.get("best_params", {}).items():
-        mlflow_module.log_param(f"{best_model}.{key}", value)
-
-
-def _log_estimator_params(mlflow_module: Any, models: dict[str, Any]) -> None:
-    for model_name, model in models.items():
-        for key, value in model.get_params().items():
-            if isinstance(value, (str, int, float, bool)) or value is None:
-                mlflow_module.log_param(f"trained.{model_name}.{key}", value)
-
-
-def _target_column(feature_dir: Path) -> str:
-    metadata_path = feature_dir / "metadata.json"
-    if metadata_path.exists():
-        return _read_json(metadata_path).get("target_column", TARGET_COLUMN)
-    return TARGET_COLUMN
-
-
-def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _write_json(path: Path, payload: Any) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+def _safe_sync_training_outputs_to_postgres(
+    *,
+    output_paths: dict[str, Path],
+    metrics: dict[str, dict[str, float]],
+    model_selection: dict[str, Any],
+    mlflow_tracking: dict[str, Any],
+) -> dict[str, list[str]] | dict[str, Any]:
+    try:
+        return _sync_training_outputs_to_postgres(
+            output_paths=output_paths,
+            metrics=metrics,
+            model_selection=model_selection,
+            mlflow_tracking=mlflow_tracking,
+        )
+    except Exception as exc:
+        return {
+            "models": [],
+            "metadata": [],
+            "explainers": [],
+            "error": str(exc),
+        }
 
 
 def _sync_training_outputs_to_postgres(
     *,
     output_paths: dict[str, Path],
     metrics: dict[str, dict[str, float]],
-    best_model_name: str,
     model_selection: dict[str, Any],
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, list[str]]:
@@ -366,7 +406,15 @@ def _sync_training_outputs_to_postgres(
     return sync_training_outputs_to_postgres(
         output_paths=output_paths,
         metrics=metrics,
-        best_model_name=best_model_name,
+        best_model_name="classification_and_regression",
         model_selection=model_selection,
         mlflow_tracking=mlflow_tracking,
     )
+
+
+def _read_json(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

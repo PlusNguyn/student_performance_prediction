@@ -4,190 +4,62 @@
   <section class="content-band">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">Learning intelligence</p>
-        <h2>Prediction result</h2>
+        <p class="eyebrow">Personal prediction</p>
+        <h2>My result</h2>
       </div>
-      <form class="search-inline" method="get">
-        <label class="visually-hidden" for="studentId">Student ID</label>
-        <input id="studentId" name="student_id" class="form-control" value="{{ student_id }}" placeholder="Enter student ID">
-        <button class="btn btn-primary" type="submit"><i class="fa-solid fa-magnifying-glass"></i> Analyze</button>
-      </form>
+      {% if student_id %}
+        <span class="badge-soft"><i class="fa-solid fa-lock"></i> Student {{ student_id }}</span>
+      {% endif %}
     </div>
 
     {% if empty_message %}
       <div class="empty-state">
         <div class="empty-icon"><i class="fa-solid fa-id-card"></i></div>
         <h3>{{ empty_message }}</h3>
-        <p>No prediction, analytics, alerts, or recommendations are shown until a student ID is available.</p>
+        <p>Student dashboards are restricted to the Student ID assigned in the profile.</p>
       </div>
     {% else %}
       <div class="kpi-grid">
-        {% for card in dashboard.kpis %}
+        {% for card in kpis %}
           {% include "components/kpi_card.html" with card=card %}
         {% endfor %}
       </div>
 
       <div class="dashboard-grid mt-4">
-        <article class="panel panel-span-8">
+        <article class="panel panel-span-6">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">Trend</p>
-              <h3>Learning score and engagement</h3>
+              <p class="eyebrow">Prediction</p>
+              <h3>Fail / pass forecast</h3>
             </div>
-            <span class="badge-soft">Student {{ dashboard.student_id }}</span>
+            <span class="risk-badge risk-{{ prediction.risk|lower }}">{{ prediction.risk }}</span>
           </div>
-          <div class="chart-box chart-tall">
-            <canvas data-chart='{{ dashboard.charts.learning }}'></canvas>
+          <div class="prediction-result">
+            <span class="prediction-icon {% if prediction.prediction_value %}prediction-pass{% else %}prediction-fail{% endif %}">
+              <i class="fa-solid {% if prediction.prediction_value %}fa-circle-check{% else %}fa-circle-xmark{% endif %}"></i>
+            </span>
+            <div>
+              <p class="eyebrow">Model output</p>
+              <h3>{{ prediction.prediction_label }}</h3>
+              <p class="text-muted mb-0">Confidence {{ prediction.confidence }}%</p>
+            </div>
           </div>
         </article>
 
-        <article class="panel panel-span-4">
-          <div class="progress-ring" style="--progress:82">
-            <span>82%</span>
+        <article class="panel panel-span-6">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Learning percentage</p>
+              <h3>Predicted absorption</h3>
+            </div>
+            <span class="badge-soft">{{ prediction.code_module }} {{ prediction.code_presentation }}</span>
           </div>
-          <h3>{{ dashboard.status.label }}</h3>
-          <p class="status-text">{{ dashboard.status.value }}</p>
-          <div class="confidence-row">
-            <span>Confidence</span>
-            <strong>{{ dashboard.status.confidence }}</strong>
+          <div class="progress-ring" style="--progress:{{ prediction.learning_percentage }}">
+            <span>{{ prediction.learning_percentage }}%</span>
           </div>
-          <p class="text-muted mb-0">{{ dashboard.status.description }}</p>
+          <p class="text-muted mb-0 text-center">This result is calculated from the demo dataset and local model artifacts.</p>
         </article>
       </div>
-
-      <div class="dashboard-grid mt-4">
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Quiz</p>
-              <h3>Performance</h3>
-            </div>
-          </div>
-          <div class="chart-box">
-            <canvas data-chart='{{ dashboard.charts.quiz }}'></canvas>
-          </div>
-        </article>
-
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Assignments</p>
-              <h3>Completion</h3>
-            </div>
-          </div>
-          <div class="chart-box">
-            <canvas data-chart='{{ dashboard.charts.assignment }}'></canvas>
-          </div>
-        </article>
-
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Activity</p>
-              <h3>Study heatmap</h3>
-            </div>
-          </div>
-          <div class="heatmap-grid">
-            {% for level in dashboard.heatmap %}
-              <span class="heat-cell heat-{{ level }}" title="Activity level {{ level }}"></span>
-            {% endfor %}
-          </div>
-          <div class="heatmap-scale">
-            <span>Low</span>
-            <span class="heat-cell heat-2"></span>
-            <span class="heat-cell heat-4"></span>
-            <span class="heat-cell heat-6"></span>
-            <span>High</span>
-          </div>
-        </article>
-      </div>
-
-      <div class="dashboard-grid mt-4">
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Alerts</p>
-              <h3>Learning warnings</h3>
-            </div>
-          </div>
-          <div class="stack-list">
-            {% for alert in dashboard.alerts %}
-              <div class="alert-card alert-{{ alert.tone }}">
-                <i class="fa-solid fa-circle-exclamation"></i>
-                <div>
-                  <strong>{{ alert.title }}</strong>
-                  <p>{{ alert.body }}</p>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        </article>
-
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">AI</p>
-              <h3>Recommendations</h3>
-            </div>
-          </div>
-          <div class="stack-list">
-            {% for item in dashboard.recommendations %}
-              <div class="recommend-card">
-                <span>{{ item.impact }}</span>
-                <strong>{{ item.title }}</strong>
-                <p>{{ item.body }}</p>
-              </div>
-            {% endfor %}
-          </div>
-        </article>
-
-        <article class="panel panel-span-4">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Timeline</p>
-              <h3>Learning history</h3>
-            </div>
-          </div>
-          <div class="timeline">
-            {% for item in dashboard.history %}
-              <div class="timeline-item">
-                <span>{{ item.date }}</span>
-                <strong>{{ item.event }}</strong>
-                <p>{{ item.detail }}</p>
-              </div>
-            {% endfor %}
-          </div>
-        </article>
-      </div>
-
-      <article class="panel mt-4">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">Explainability</p>
-            <h3>Feature explanations</h3>
-          </div>
-        </div>
-        <div class="table-responsive">
-          <table class="table app-table align-middle">
-            <thead>
-              <tr>
-                <th>Feature</th>
-                <th>Weight</th>
-                <th>Direction</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in dashboard.feature_rows %}
-                <tr>
-                  <td>{{ row.feature }}</td>
-                  <td>{{ row.weight }}</td>
-                  <td><span class="badge-soft">{{ row.direction }}</span></td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </article>
     {% endif %}
   </section>
 {% endblock %}
