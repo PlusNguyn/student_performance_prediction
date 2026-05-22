@@ -58,6 +58,13 @@ class Command(BaseCommand):
                     f"({mlflow_status['tracking_uri']})"
                 )
             )
+            plot_artifacts = mlflow_status.get("plot_artifacts", [])
+            if plot_artifacts:
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f"MLflow plots: {len(plot_artifacts)} files under artifacts/plots"
+                    )
+                )
         elif mlflow_status.get("error"):
             self.stdout.write(
                 self.style.WARNING(

@@ -11,15 +11,13 @@ import pandas as pd
 from django.conf import settings
 
 from preprocessing.pipeline import (
-    TARGET_CLASS_COLUMN,
-    TARGET_REGRESSION_COLUMN,
-    _add_targets,
+    CATEGORICAL_COLUMNS,
+    MODEL_FEATURE_COLUMNS,
+    add_features,
     build_assessment_features,
-    build_modeling_dataset,
     build_vle_features,
     clean_raw_tables,
     load_raw_tables,
-    prepare_features,
 )
 
 
@@ -64,13 +62,22 @@ def get_demo_summary() -> dict[str, Any]:
     }
 
 
+def get_demo_data_label() -> str:
+    demo_dir = _demo_data_dir()
+    base_dir = Path(settings.BASE_DIR)
+    try:
+        return str(demo_dir.relative_to(base_dir)).replace("\\", "/")
+    except ValueError:
+        return str(demo_dir)
+
+
 @lru_cache(maxsize=1)
 def get_demo_predictions() -> list[dict[str, Any]]:
     paths = _prediction_paths()
     _ensure_required_files(paths)
 
     dataset = _build_demo_dataset(paths["demo_dir"])
-    encoded_dataset, features, _, _, _, _ = prepare_features(dataset)
+    encoded_dataset, features = _prepare_inference_features(dataset)
     model_features = _read_json(paths["feature_columns"])
     model_medians = _read_json(paths["medians"])
     features = _align_features(features, model_features, model_medians)
@@ -112,12 +119,19 @@ def get_demo_predictions() -> list[dict[str, Any]]:
 def _prediction_paths() -> dict[str, Path]:
     base_dir = Path(settings.BASE_DIR)
     return {
-        "demo_dir": base_dir / "data" / "demo",
+        "demo_dir": _demo_data_dir(),
         "classification_model": base_dir / "models" / "classification_model.joblib",
         "regression_model": base_dir / "models" / "regression_model.joblib",
         "feature_columns": base_dir / "models" / "features.json",
         "medians": base_dir / "models" / "medians.json",
     }
+
+
+def _demo_data_dir() -> Path:
+    configured_dir = Path(getattr(settings, "DEMO_DATA_DIR", "data/demo_oulad"))
+    if configured_dir.is_absolute():
+        return configured_dir
+    return Path(settings.BASE_DIR) / configured_dir
 
 
 def _ensure_required_files(paths: dict[str, Path]) -> None:
@@ -129,18 +143,73 @@ def _ensure_required_files(paths: dict[str, Path]) -> None:
 def _build_demo_dataset(demo_dir: Path) -> pd.DataFrame:
     raw_tables = load_raw_tables(demo_dir)
     cleaned = clean_raw_tables(raw_tables)
-    students = _add_targets(cleaned["student_info"])
     assessment_features = build_assessment_features(
         cleaned["student_assess"],
         cleaned["assessments"],
-    )
+    ).drop(columns=["learning_percentage"], errors="ignore")
     vle_features = build_vle_features(cleaned["student_vle"])
-    return build_modeling_dataset(
-        students=students,
-        student_reg=cleaned["student_reg"],
-        assessment_features=assessment_features,
-        vle_features=vle_features,
+    merged = cleaned["student_info"].merge(
+        cleaned["student_reg"],
+        on=["code_module", "code_presentation", "id_student"],
+        how="left",
     )
+    merged = merged.merge(
+        assessment_features,
+        on=["code_module", "code_presentation", "id_student"],
+        how="left",
+    )
+    merged = merged.merge(
+        vle_features,
+        on=["code_module", "code_presentation", "id_student"],
+        how="left",
+    )
+    numeric_fill_zero = [
+        "total_score",
+        "avg_score",
+        "min_score",
+        "max_score",
+        "num_assessments",
+        "late_submissions",
+        "total_clicks",
+        "active_days",
+        "avg_daily_clicks",
+        "max_clicks_day",
+    ]
+    existing_numeric = [
+        column for column in numeric_fill_zero if column in merged.columns
+    ]
+    merged[existing_numeric] = merged[existing_numeric].fillna(0)
+    featured = add_features(merged)
+    return featured[["id_student", *MODEL_FEATURE_COLUMNS]].copy()
+
+
+def _prepare_inference_features(
+    dataset: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    df_clean = dataset.copy()
+    numeric_columns = df_clean.select_dtypes(include=[np.number]).columns
+    medians = df_clean[numeric_columns].median(numeric_only=True).to_dict()
+    df_clean[numeric_columns] = df_clean[numeric_columns].fillna(medians)
+
+    for column in CATEGORICAL_COLUMNS:
+        mode = _mode_or_default(df_clean[column], "Unknown")
+        df_clean[column] = df_clean[column].fillna(mode).astype(str)
+
+    encoded_dataset = pd.get_dummies(
+        df_clean,
+        columns=CATEGORICAL_COLUMNS,
+        drop_first=True,
+        dtype=int,
+    )
+    feature_columns = [
+        column
+        for column in encoded_dataset.columns
+        if column != "id_student"
+    ]
+    features = encoded_dataset[feature_columns].copy()
+    feature_medians = features.median(numeric_only=True).to_dict()
+    features = features.fillna(feature_medians)
+    return encoded_dataset, features
 
 
 def _align_features(
@@ -189,6 +258,13 @@ def _engagement_score(dataset: pd.DataFrame, index: int) -> int:
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _mode_or_default(series: pd.Series, default: Any) -> Any:
+    mode = series.mode(dropna=True)
+    if mode.empty:
+        return default
+    return mode.iloc[0]
 
 
 def _mean(values: Any) -> float:

@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.pyplot as plt
 
 
 SEED = 42
@@ -50,27 +50,32 @@ MODEL_FEATURE_COLUMNS = [
     "registration_lead_days",
     "registered_flag",
     "registration_duration",
-    "clicks_per_credit",
-    "score_per_assess",
+    "clicks_per_credit", # new feature engineering
+    "score_per_assess", # new feature engineering
     "clicks_per_day",
     "clicks_per_week",
-    "engagement_intensity",
+    "engagement_intensity", # new feature engineering
     "credit_load_category",
     "assessment_density",
     "score_per_credit",
     "activity_efficiency",
-    "low_activity_flag",
+    "low_activity_flag", # new feature engineering
     "late_registration_flag",
     "high_click_but_low_score_flag",
 ]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True) 
+# dataclass giúp Python tự tạo sẵn các hàm như __init__, __repr__, __eq__... 
+# và frozen=True làm cho instance của class này trở nên bất biến (immutable), \
+# nghĩa là sau khi được tạo ra, bạn không thể thay đổi giá trị của các thuộc tính của nó.
 class PreprocessingPaths:
     raw_dir: Path
     preprocessed_dir: Path
     feature_dir: Path
     plot_dir: Path
+
+
 
     @classmethod
     def from_defaults(
@@ -237,7 +242,11 @@ def load_raw_tables(raw_dir: Path) -> dict[str, pd.DataFrame]:
 
 
 def clean_raw_tables(raw_tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
+    '''
+    Thực hiện các bước làm sạch dữ liệu cơ bản cho từng bảng, bao gồm:
+    '''
     tables = {name: frame.copy() for name, frame in raw_tables.items()}
+    # Sao chép dữ liệu gốc để tránh thay đổi trực tiếp, đảm bảo tính toàn vẹn của dữ liệu gốc trong quá trình làm sạch.
 
     student_info = tables["student_info"]
     student_reg = tables["student_reg"]
@@ -247,28 +256,31 @@ def clean_raw_tables(raw_tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFr
 
     student_info["imd_band"] = student_info["imd_band"].fillna(
         _mode_or_default(student_info["imd_band"], "Unknown")
-    )
+    ) # Điền giá trị thiếu trong cột imd_band bằng giá trị mode của cột đó, hoặc "Unknown" nếu không có mode nào tồn tại.
 
     student_reg["date_registration"] = pd.to_numeric(
         student_reg["date_registration"],
         errors="coerce",
-    )
+    ) # Chuyển đổi cột date_registration sang kiểu số, nếu có lỗi trong quá trình chuyển đổi sẽ được thay thế bằng NaN.
+
     student_reg["date_registration"] = student_reg["date_registration"].fillna(
         student_reg["date_registration"].median()
-    )
+    ) # Điền giá trị thiếu trong cột date_registration bằng giá trị trung vị của cột đó, giúp giảm thiểu ảnh hưởng của các giá trị ngoại lai.
+
     student_reg["date_unregistration"] = pd.to_numeric(
         student_reg["date_unregistration"],
         errors="coerce",
-    ).fillna(-1)
+    ).fillna(-1) # Chuyển đổi cột date_unregistration sang kiểu số, nếu có lỗi trong quá trình chuyển đổi sẽ được thay thế bằng -1.
 
     student_assess["score"] = pd.to_numeric(
         student_assess["score"],
         errors="coerce",
-    ).fillna(0)
+    ).fillna(0) # Chuyển đổi cột score sang kiểu số, nếu có lỗi trong quá trình chuyển đổi sẽ được thay thế bằng 0.
+
     student_assess["is_banked"] = pd.to_numeric(
         student_assess["is_banked"],
         errors="coerce",
-    ).fillna(0)
+    ).fillna(0) # Chuyển đổi cột is_banked sang kiểu số, nếu có lỗi trong quá trình chuyển đổi sẽ được thay thế bằng 0.
 
     assessments["date"] = pd.to_numeric(assessments["date"], errors="coerce")
     assessments["date"] = assessments["date"].fillna(assessments["date"].median())
@@ -285,13 +297,25 @@ def build_assessment_features(
     student_assessment: pd.DataFrame,
     assessments: pd.DataFrame,
 ) -> pd.DataFrame:
+    '''
+    Tính toán các đặc trưng liên quan đến đánh giá cho mỗi sinh viên, bao gồm:
+    - Tổng điểm
+    - Điểm trung bình
+    - Điểm thấp nhất
+    - Điểm cao nhất
+    - Số lượng đánh giá
+    - Số lần nộp bài trễ
+    '''
     merged = student_assessment.merge(
         assessments[STUDENT_KEY[:2] + ["id_assessment", "weight"]],
         on="id_assessment",
         how="left",
-    )
-    merged["weight_filled"] = merged["weight"].fillna(1)
+    ) # Kết hợp dữ liệu giữa student_assessment và assessments dựa trên cột id_assessment để lấy thông tin về trọng số của từng đánh giá.
+
+    merged["weight_filled"] = merged["weight"].fillna(1) 
+    # Điền giá trị thiếu trong cột weight bằng 1, giả định rằng nếu không có trọng số nào được cung cấp thì trọng số mặc định là 1.
     merged["weighted_score"] = merged["score"] * merged["weight_filled"]
+    # Tính toán điểm đã được trọng số hóa bằng cách nhân điểm số của sinh viên với trọng số tương ứng của đánh giá đó.
 
     features = (
         merged.groupby(STUDENT_KEY, as_index=False)
@@ -305,18 +329,30 @@ def build_assessment_features(
             weighted_score_sum=("weighted_score", "sum"),
             weight_sum=("weight_filled", "sum"),
         )
-    )
+    ) # Nhóm dữ liệu theo STUDENT_KEY và tính toán các đặc trưng tổng hợp cho mỗi sinh viên, bao gồm tổng điểm, điểm trung bình, điểm thấp nhất, điểm cao nhất, số lượng đánh giá, số lần nộp bài trễ, tổng điểm đã được trọng số hóa và tổng trọng số.
+
     features[TARGET_REGRESSION_COLUMN] = safe_divide(
         features["weighted_score_sum"],
         features["weight_sum"],
-    ).fillna(features["avg_score"])
+    ).fillna(features["avg_score"]) # Tính toán cột learning_percentage bằng cách chia tổng điểm đã được trọng số hóa cho tổng trọng số, nếu có giá trị NaN thì sẽ được thay thế bằng điểm trung bình của sinh viên đó.
+
+
     features[TARGET_REGRESSION_COLUMN] = (
         features[TARGET_REGRESSION_COLUMN].fillna(0).clip(lower=0, upper=100)
     )
+    # Đảm bảo rằng giá trị trong cột learning_percentage nằm trong khoảng [0, 100]
+
     return features.drop(columns=["weighted_score_sum", "weight_sum"])
 
 
 def build_vle_features(student_vle: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Tính toán các đặc trưng liên quan đến hoạt động trên nền tảng học tập điện tử (VLE) cho mỗi sinh viên, bao gồm:
+    - Tổng số lần click
+    - Số ngày hoạt động
+    - Số lần click trung bình mỗi ngày
+    - Số lần click cao nhất trong một ngày
+    '''
     return (
         student_vle.groupby(STUDENT_KEY, as_index=False)
         .agg(
@@ -327,7 +363,6 @@ def build_vle_features(student_vle: pd.DataFrame) -> pd.DataFrame:
         )
     )
 
-
 def build_modeling_dataset(
     *,
     students: pd.DataFrame,
@@ -335,6 +370,13 @@ def build_modeling_dataset(
     assessment_features: pd.DataFrame,
     vle_features: pd.DataFrame,
 ) -> pd.DataFrame:
+    '''
+    Kết hợp dữ liệu từ các bảng khác nhau để tạo ra một dataset hoàn chỉnh cho việc modeling, bao gồm:
+    - Thông tin sinh viên
+    - Thông tin đăng ký
+    - Đặc trưng đánh giá
+    - Đặc trưng hoạt động VLE
+    '''
     merged = students.merge(student_reg, on=STUDENT_KEY, how="left")
     merged = merged.merge(assessment_features, on=STUDENT_KEY, how="left")
     merged = merged.merge(vle_features, on=STUDENT_KEY, how="left")
@@ -352,8 +394,10 @@ def build_modeling_dataset(
         "avg_daily_clicks",
         "max_clicks_day",
     ]
-    merged[numeric_fill_zero] = merged[numeric_fill_zero].fillna(0)
-    merged = add_notebook_features(merged)
+
+    merged[numeric_fill_zero] = merged[numeric_fill_zero].fillna(0)\
+
+    merged = add_features(merged)
     return merged[
         [
             "id_student",
@@ -365,7 +409,30 @@ def build_modeling_dataset(
     ].copy()
 
 
-def add_notebook_features(frame: pd.DataFrame) -> pd.DataFrame:
+def add_features(frame: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Thêm các đặc trưng mới vào DataFrame đầu vào. Các đặc trưng này bao gồm:
+    - registration_lead_days: Số ngày từ khi đăng ký đến ngày bắt đầu khóa học
+    - registered_flag: Cờ cho biết sinh viên đã đăng ký hay chưa
+    - registration_duration: Thời gian đăng ký (từ ngày đăng ký đến ngày hủy đăng ký hoặc ngày hiện tại nếu chưa hủy)
+    - imd_num: Chuyển đổi imd_band thành số
+    - age_num: Chuyển đổi age_band thành số
+    - edu_level: Chuyển đổi highest_education thành cấp
+    - gender_m: Chuyển đổi gender thành cờ giới tính nam
+    - disability_flag: Chuyển đổi disability thành cờ khuyết tật
+    - clicks_per_credit: Số lần click trung bình mỗi tín chỉ đã học
+    - score_per_assess: Điểm trung bình mỗi đánh giá
+    - clicks_per_day: Số lần click trung bình mỗi ngày hoạt động
+    - clicks_per_week: Số lần click trung bình mỗi tuần hoạt động
+    - engagement_intensity: Cường độ tương tác dựa trên số lần click so với trung bình
+    - credit_load_category: Phân loại khối lượng tín chỉ đã học thành "light", "medium", "heavy"
+    - assessment_density: Số lượng đánh giá trên mỗi tín chỉ đã học
+    - score_per_credit: Điểm trung bình mỗi tín chỉ đã học
+    - activity_efficiency: Hiệu quả hoạt động dựa trên điểm trung bình mỗi đánh giá so với số lần click trung bình mỗi tín chỉ
+    - low_activity_flag: Cờ cho biết sinh viên có số lần click thấp hơn trung vị hay không
+    - late_registration_flag: Cờ cho biết sinh viên có đăng ký muộn hơn trung vị hay không
+    - high_click_but_low_score_flag: Cờ cho biết sinh viên có số lần click cao hơn trung vị nhưng điểm thấp hơn trung vị hay không
+    '''
     df = frame.copy()
 
     df["registration_lead_days"] = -pd.to_numeric(
@@ -373,6 +440,7 @@ def add_notebook_features(frame: pd.DataFrame) -> pd.DataFrame:
         errors="coerce",
     ).fillna(0)
     df["registered_flag"] = df["date_unregistration"].ne(-1).astype(int)
+    # Cột registered_flag được tạo ra bằng cách kiểm tra xem cột date_unregistration có khác -1 hay không. Nếu khác -1, có nghĩa là sinh viên đã hủy đăng ký, do đó registered_flag sẽ là 0. Nếu bằng -1, có nghĩa là sinh viên vẫn đang đăng ký, do đó registered_flag sẽ là 1.
     df["registration_duration"] = np.where(
         df["date_unregistration"].ne(-1),
         df["date_unregistration"] - df["date_registration"],
@@ -444,6 +512,15 @@ def add_notebook_features(frame: pd.DataFrame) -> pd.DataFrame:
 def prepare_features(
     modeling_dataset: pd.DataFrame,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, dict[str, float], dict[str, list[str]]]:
+    '''
+    Chuẩn bị các đặc trưng cho mô hình hóa từ dữ liệu đầu vào. Các bước bao gồm:
+    - Điền giá trị thiếu cho các cột số bằng giá trị trung vị
+    - Điền giá trị thiếu cho các cột phân loại bằng giá trị mode hoặc "Unknown"
+    - Mã hóa one-hot cho các cột phân loại
+    - Tách các đặc trưng và mục tiêu thành X, y_class, y_reg
+    - Trả về dataset đã mã hóa, X, y_class, y_reg, dictionary chứa giá trị trung vị cho các cột số và dictionary chứa các mức phân loại cho các cột phân loại
+
+    '''
     df_clean = modeling_dataset.copy()
     numeric_columns = df_clean.select_dtypes(include=[np.number]).columns
     medians = df_clean[numeric_columns].median(numeric_only=True).to_dict()
@@ -699,7 +776,7 @@ def save_outputs(
     _write_json(
         feature_files["metadata"],
         {
-            "pipeline": "notebook_style_preprocessing",
+            "pipeline": "oulad_preprocessing",
             "classification_target": TARGET_CLASS_COLUMN,
             "regression_target": TARGET_REGRESSION_COLUMN,
             "target_column": TARGET_REGRESSION_COLUMN,
@@ -755,7 +832,7 @@ def log_preprocessing_to_mlflow(
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)
             with mlflow.start_run(run_name="preprocess-data") as run:
-                mlflow.log_param("pipeline", "notebook_style_preprocessing")
+                mlflow.log_param("pipeline", "oulad_preprocessing")
                 mlflow.log_param("test_size", test_size)
                 mlflow.log_param("random_state", random_state)
                 mlflow.log_param("classification_target", TARGET_CLASS_COLUMN)
@@ -780,15 +857,20 @@ def log_preprocessing_to_mlflow(
                 )
                 mlflow.log_artifacts(str(paths.preprocessed_dir), artifact_path="preprocessed")
                 mlflow.log_artifacts(str(paths.feature_dir), artifact_path="features")
-                for name, path in output_paths.items():
-                    if name.endswith("_distribution") or name == "feature_correlation":
-                        mlflow.log_artifact(path, artifact_path="plots")
+                plot_artifacts = [
+                    str(path)
+                    for path in sorted(paths.plot_dir.glob("*"))
+                    if path.is_file()
+                ]
+                if plot_artifacts:
+                    mlflow.log_artifacts(str(paths.plot_dir), artifact_path="plots")
 
                 return {
                     "enabled": True,
                     "run_id": run.info.run_id,
                     "experiment_id": run.info.experiment_id,
                     "tracking_uri": tracking_uri,
+                    "plot_artifacts": plot_artifacts,
                 }
     except Exception as exc:
         return {
@@ -799,6 +881,10 @@ def log_preprocessing_to_mlflow(
 
 
 def imd_to_mid(value: Any) -> float:
+    '''
+    Chuyển đổi giá trị imd_band thành một số trung bình tương ứng. Các giá trị có thể là một khoảng (ví dụ: "0-10%") 
+    hoặc một giá trị duy nhất (ví dụ: "20%"). Nếu giá trị không hợp lệ hoặc thiếu, trả về NaN.
+    '''
     try:
         if pd.isna(value) or str(value) == "Unknown":
             return np.nan
@@ -812,6 +898,9 @@ def imd_to_mid(value: Any) -> float:
 
 
 def safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
+    '''
+    Thực hiện phép chia giữa hai Series một cách an toàn, tránh lỗi chia cho zero và xử lý các giá trị vô hạn.
+    '''
     denominator = denominator.replace(0, np.nan)
     return numerator.div(denominator).replace([np.inf, -np.inf], np.nan).fillna(0)
 
@@ -890,6 +979,9 @@ def _read_csv(path: Path) -> pd.DataFrame:
 
 
 def _mode_or_default(series: pd.Series, default: Any) -> Any:
+    '''
+    Tính mode của một Series, trả về giá trị mặc định nếu không có mode nào tồn tại.
+    '''
     mode = series.dropna().mode()
     if mode.empty:
         return default
@@ -897,10 +989,12 @@ def _mode_or_default(series: pd.Series, default: Any) -> Any:
 
 
 def _missing_summary(tables: dict[str, pd.DataFrame]) -> dict[str, dict[str, int]]:
+    '''Tính toán số lượng giá trị thiếu trong mỗi cột của mỗi bảng.'''
     return {
         name: {str(column): int(value) for column, value in frame.isna().sum().items()}
         for name, frame in tables.items()
     }
+
 
 
 def _ensure_directories(paths: PreprocessingPaths) -> None:
@@ -974,7 +1068,7 @@ def _sync_outputs_to_postgres(
     return sync_preprocessing_outputs_to_postgres(
         output_paths,
         metadata={
-            "pipeline": "notebook_style_preprocessing",
+            "pipeline": "oulad_preprocessing",
             "rows": rows,
             "features": features,
             "train_rows": train_rows,

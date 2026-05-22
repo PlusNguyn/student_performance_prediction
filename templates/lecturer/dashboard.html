@@ -7,14 +7,14 @@
         <p class="eyebrow">Class intelligence</p>
         <h2>Demo student predictions</h2>
       </div>
-      <span class="badge-soft"><i class="fa-solid fa-database"></i> data/demo</span>
+      <span class="badge-soft"><i class="fa-solid fa-database"></i> {{ demo_data_label }}</span>
     </div>
 
     {% if prediction_error %}
       <div class="empty-state">
         <div class="empty-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
         <h3>{{ prediction_error }}</h3>
-        <p>Check that data/demo and model artifacts are available before opening the lecturer dashboard.</p>
+        <p>Check that {{ demo_data_label }} and model artifacts are available before opening the lecturer dashboard.</p>
       </div>
     {% else %}
       <div class="kpi-grid">

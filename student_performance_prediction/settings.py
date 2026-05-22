@@ -51,10 +51,7 @@ INSTALLED_APPS = [
     'preprocessing',
     'model_training',
     'tuning_optuna',
-    'airflow_pipeline',
-    'mlflow_tracking',
-    'prediction',
-    
+    'mlflow_tracking',    
 ]
 
 MIDDLEWARE = [
@@ -137,7 +134,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Ho_Chi_Minh'
 
 USE_I18N = True
 
@@ -167,6 +164,7 @@ MLFLOW_REGISTERED_MODEL_NAME = os.getenv(
     'MLFLOW_REGISTERED_MODEL_NAME',
     'student-performance-best-model',
 )
+DEMO_DATA_DIR = os.getenv('DEMO_DATA_DIR', 'data/demo_oulad')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -6,18 +6,27 @@ from typing import Any
 from django.conf import settings
 
 
+CLASSIFICATION_TASK = "classification"
+REGRESSION_TASK = "regression"
+MODEL_TASKS = (CLASSIFICATION_TASK, REGRESSION_TASK)
+TASK_METRIC_CANDIDATES = {
+    CLASSIFICATION_TASK: (
+        "classification.f1",
+        "classification.roc_auc",
+        "classification.accuracy",
+        "classification.precision",
+        "classification.recall",
+    ),
+    REGRESSION_TASK: (
+        "regression.rmse",
+        "regression.mae",
+        "regression.r2",
+        "regression.within_10_percent",
+    ),
+}
 DEFAULT_METRIC_CANDIDATES = (
-    "regression.rmse",
-    "classification.f1",
-    "classification.accuracy",
-    "best_model.rmse",
-    "lightgbm.rmse",
-    "xgboost.rmse",
-    "best_model.mae",
-    "best_model.accuracy",
-    "lightgbm.accuracy",
-    "xgboost.accuracy",
-    "accuracy",
+    *TASK_METRIC_CANDIDATES[REGRESSION_TASK],
+    *TASK_METRIC_CANDIDATES[CLASSIFICATION_TASK],
 )
 
 
@@ -36,6 +45,7 @@ class PromotionResult:
 def promote_best_model_version(
     *,
     model_name: str | None = None,
+    task: str | None = None,
     alias: str = "production",
     metric_name: str | None = None,
     higher_is_better: bool | None = None,
@@ -43,12 +53,14 @@ def promote_best_model_version(
     dry_run: bool = False,
 ) -> PromotionResult:
     client = build_mlflow_client(tracking_uri)
-    model_name = model_name or settings.MLFLOW_REGISTERED_MODEL_NAME
+    resolved_task = _resolve_task(task) or _infer_task_from_metric(metric_name)
+    model_name = _resolve_model_name(model_name, resolved_task)
+    resolved_task = resolved_task or _infer_task_from_model_name(model_name)
     versions = client.search_model_versions(f"name='{model_name}'")
     if not versions:
         raise ValueError(f"No versions found for registered model `{model_name}`.")
 
-    selected_metric = metric_name or _select_metric_name(client, versions)
+    selected_metric = metric_name or _select_metric_name(client, versions, resolved_task)
     reverse = (
         higher_is_better
         if higher_is_better is not None
@@ -96,15 +108,21 @@ def promote_specific_model_version(
     *,
     version: str,
     model_name: str | None = None,
+    task: str | None = None,
     alias: str = "production",
     tracking_uri: str | None = None,
     dry_run: bool = False,
 ) -> PromotionResult:
+    '''
+    chuyển một version cụ thể của model lên production. Không đánh giá version đó so với các version khác, chỉ đơn thuần promote version được chỉ định.
+    '''
     client = build_mlflow_client(tracking_uri)
-    model_name = model_name or settings.MLFLOW_REGISTERED_MODEL_NAME
+    resolved_task = _resolve_task(task)
+    model_name = _resolve_model_name(model_name, resolved_task)
+    resolved_task = resolved_task or _infer_task_from_model_name(model_name)
     model_version = client.get_model_version(model_name, version)
     run = client.get_run(model_version.run_id)
-    score = _pick_metric(run.data.metrics, None)
+    score = _pick_metric(run.data.metrics, None, resolved_task)
     previous_version = get_alias_version(client, model_name, alias)
 
     if not dry_run:
@@ -126,10 +144,36 @@ def promote_specific_model_version(
 
 def load_production_model_uri(
     model_name: str | None = None,
+    task: str | None = None,
     alias: str = "production",
 ) -> str:
-    model_name = model_name or settings.MLFLOW_REGISTERED_MODEL_NAME
+    '''
+    Tạo URI cho model đang được lưu trữ trong production. URI này có thể được sử dụng để tải model bằng mlflow.pyfunc.load_model() hoặc các hàm tương tự.
+    '''
+    model_name = _resolve_model_name(model_name, _resolve_task(task))
     return f"models:/{model_name}@{alias}"
+
+
+def promote_default_model_versions(
+    *,
+    model_name: str | None = None,
+    alias: str = "production",
+    tracking_uri: str | None = None,
+    dry_run: bool = False,
+) -> tuple[PromotionResult, ...]:
+    '''
+    Promote the best versions of a model for each task. Điều này sẽ tìm kiếm các version tốt nhất của model cho cả classification và regression (nếu có) và promote chúng lên production dưới alias được chỉ định. Kết quả trả về là một tuple chứa kết quả promotion cho mỗi task.
+    '''
+    return tuple(
+        promote_best_model_version(
+            model_name=model_name,
+            task=task,
+            alias=alias,
+            tracking_uri=tracking_uri,
+            dry_run=dry_run,
+        )
+        for task in MODEL_TASKS
+    )
 
 
 def build_mlflow_client(tracking_uri: str | None = None) -> Any:
@@ -171,36 +215,86 @@ def _score_version(
 def _pick_metric(
     metrics: dict[str, float],
     metric_name: str | None,
+    task: str | None = None,
 ) -> dict[str, float | str]:
     if metric_name:
         if metric_name not in metrics:
             raise ValueError(f"Metric `{metric_name}` is missing.")
         return {"name": metric_name, "value": float(metrics[metric_name])}
 
-    for candidate in DEFAULT_METRIC_CANDIDATES:
+    for candidate in _metric_candidates(task):
         if candidate in metrics:
             return {"name": candidate, "value": float(metrics[candidate])}
 
     raise ValueError("No default promotion metric found.")
 
 
-def _select_metric_name(client: Any, versions: list[Any]) -> str:
+def _select_metric_name(client: Any, versions: list[Any], task: str | None = None) -> str:
     metrics_by_version = [
         client.get_run(version.run_id).data.metrics
         for version in versions
     ]
-    for candidate in DEFAULT_METRIC_CANDIDATES:
+    candidates = _metric_candidates(task)
+    for candidate in candidates:
         if any(candidate in metrics for metrics in metrics_by_version):
             return candidate
     raise ValueError(
         "No model version contains a promotion metric. "
-        f"Tried: {', '.join(DEFAULT_METRIC_CANDIDATES)}."
+        f"Tried: {', '.join(candidates)}."
     )
 
 
 def _metric_lower_is_better(metric_name: str) -> bool:
     lowered = metric_name.lower()
     return any(token in lowered for token in ("rmse", "mae", "mse", "loss", "error"))
+
+
+def _metric_candidates(task: str | None) -> tuple[str, ...]:
+    resolved_task = _resolve_task(task)
+    if resolved_task:
+        return TASK_METRIC_CANDIDATES[resolved_task]
+    return DEFAULT_METRIC_CANDIDATES
+
+
+def _resolve_task(task: str | None) -> str | None:
+    if task is None:
+        return None
+    if task not in MODEL_TASKS:
+        raise ValueError(
+            f"Unknown model task `{task}`. Expected one of: {', '.join(MODEL_TASKS)}."
+        )
+    return task
+
+
+def _resolve_model_name(model_name: str | None, task: str | None) -> str:
+    base_name = model_name or settings.MLFLOW_REGISTERED_MODEL_NAME
+    if not task:
+        return base_name
+
+    suffix = f"-{task}"
+    if base_name.endswith(suffix):
+        return base_name
+    for existing_task in MODEL_TASKS:
+        existing_suffix = f"-{existing_task}"
+        if base_name.endswith(existing_suffix):
+            return f"{base_name[: -len(existing_suffix)]}{suffix}"
+    return f"{base_name}{suffix}"
+
+
+def _infer_task_from_model_name(model_name: str) -> str | None:
+    for task in MODEL_TASKS:
+        if model_name.endswith(f"-{task}"):
+            return task
+    return None
+
+
+def _infer_task_from_metric(metric_name: str | None) -> str | None:
+    if not metric_name:
+        return None
+    for task in MODEL_TASKS:
+        if metric_name.startswith(f"{task}."):
+            return task
+    return None
 
 
 def _record_model_promotion(result: PromotionResult, *, source: str) -> None:

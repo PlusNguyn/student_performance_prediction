@@ -20,6 +20,7 @@ from .forms import (
 )
 from .demo_predictions import (
     DemoPredictionError,
+    get_demo_data_label,
     get_demo_summary,
     get_lecturer_predictions,
     get_student_prediction,
@@ -181,6 +182,7 @@ def student_dashboard(request):
         'active_role': UserProfile.STUDENT,
         'active_section': 'dashboard',
         'student_id': student_id,
+        'demo_data_label': get_demo_data_label(),
     }
     if not student_id:
         context['empty_message'] = 'Your profile does not have a Student ID yet.'
@@ -195,7 +197,7 @@ def student_dashboard(request):
     if not prediction:
         context['empty_message'] = (
             'No demo prediction was found for your Student ID. '
-            'Ask an administrator to map your profile to an ID in data/demo.'
+            f"Ask an administrator to map your profile to an ID in {get_demo_data_label()}."
         )
         return render(request, 'student/dashboard.html', context)
 
@@ -230,8 +232,9 @@ def lecturer_dashboard(request):
         'page_title': 'Lecturer Dashboard',
         'active_role': UserProfile.LECTURER,
         'active_section': 'dashboard',
+        'demo_data_label': get_demo_data_label(),
         'kpis': [
-            {'label': 'Demo students', 'value': summary['total'], 'trend': 'data/demo', 'icon': 'fa-users', 'tone': 'primary'},
+            {'label': 'Demo students', 'value': summary['total'], 'trend': get_demo_data_label(), 'icon': 'fa-users', 'tone': 'primary'},
             {'label': 'High risk', 'value': summary['high_risk'], 'trend': f"{summary['medium_risk']} medium", 'icon': 'fa-triangle-exclamation', 'tone': 'danger'},
             {'label': 'Avg learning', 'value': f"{summary['avg_learning']}%", 'trend': 'Predicted', 'icon': 'fa-graduation-cap', 'tone': 'success'},
             {'label': 'Pass rate', 'value': summary['pass_rate'], 'trend': f"{summary['avg_confidence']}% confidence", 'icon': 'fa-list-check', 'tone': 'info'},
@@ -240,7 +243,7 @@ def lecturer_dashboard(request):
         'prediction_error': prediction_error,
         'alerts': [
             {'title': f"{summary['high_risk']} students need attention", 'body': 'Prioritize high-risk students from the demo prediction table.', 'tone': 'danger'},
-            {'title': 'Demo data connected', 'body': 'Rows are loaded from data/demo and scored with local model artifacts.', 'tone': 'info'},
+            {'title': 'Demo data connected', 'body': f"Rows are loaded from {get_demo_data_label()} and scored with local model artifacts.", 'tone': 'info'},
             {'title': 'Student privacy', 'body': 'Student accounts only receive their own profile prediction.', 'tone': 'success'},
         ],
         'charts': {

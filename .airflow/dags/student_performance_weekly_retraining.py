@@ -94,7 +94,7 @@ with DAG(
             "FEATURE_DIR=${AIRFLOW_FEATURE_DIR:-data/feature} && "
             "MODEL_DIR=${AIRFLOW_MODEL_DIR:-models} && "
             "TUNING_DIR=${AIRFLOW_TUNING_DIR:-models/tuning_optuna} && "
-            "PARAMS_PATH=${AIRFLOW_BEST_MODEL_CONFIG:-$TUNING_DIR/best_model_config.json} && "
+            "PARAMS_PATH=${AIRFLOW_BEST_MODEL_PARAMS:-${AIRFLOW_BEST_MODEL_CONFIG:-$TUNING_DIR/best_model_params.json}} && "
             f"{PYTHON} manage.py train_models "
             "--feature-dir \"$FEATURE_DIR\" "
             "--model-dir \"$MODEL_DIR\" "

@@ -37,8 +37,8 @@ def django_command(task_id: str, command: str) -> BashOperator:
 with DAG(
     dag_id="student_performance_training_pipeline",
     description=(
-        "One-time bootstrap pipeline to preprocess raw data, tune regressors, "
-        "train the first model, and promote it for prediction."
+        "One-time bootstrap pipeline to preprocess raw data, tune RandomForest "
+        "models, train the first model pair, and promote them for prediction."
     ),
     default_args=DEFAULT_ARGS,
     start_date=datetime(2026, 1, 1),
@@ -68,9 +68,15 @@ with DAG(
 
     train = django_command(
         "train_models",
-        "train_models --params-path models/tuning_optuna/best_model_config.json",
+        "train_models --params-path models/tuning_optuna/best_model_params.json",
     )
 
     promote = django_command("promote_best_model", "promote_best_model")
 
     migrate >> preprocess >> tune >> train >> promote
+
+# Note: Tune trước để tìm hyperparameters tốt cho RandomForestClassifier và RandomForestRegressor. Sau đó train_models dùng các params đó để train model cuối cùng, evaluate test set, lưu model .joblib, log MLflow và đăng ký model registry.
+
+# Vì tune_best_model dùng Optuna + cross-validation để tìm hyperparameters tốt cho RandomForestClassifier và RandomForestRegressor. Sau đó train_models dùng các params đó để train model cuối cùng, evaluate test set, lưu model .joblib, log MLflow và đăng ký model registry.
+
+# Nếu không tune trước thì train_models vẫn chạy được, nhưng dùng default params trong training.py. Tune trước là để training cuối dùng bộ tham số tốt hơn thay vì mặc định.
