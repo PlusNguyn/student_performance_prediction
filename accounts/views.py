@@ -208,7 +208,61 @@ def student_dashboard(request):
         {'label': 'Learning percentage', 'value': f"{prediction['learning_percentage']}%", 'trend': prediction['code_presentation'], 'icon': 'fa-chart-line', 'tone': 'info'},
         {'label': 'Risk level', 'value': prediction['risk'], 'trend': 'Model output', 'icon': 'fa-triangle-exclamation', 'tone': {'High': 'danger', 'Medium': 'warning', 'Low': 'success'}[prediction['risk']]},
     ]
+    context['student_reminders'] = build_student_reminders(prediction)
     return render(request, 'student/dashboard.html', context)
+
+
+def build_student_reminders(prediction):
+    learning_percentage = float(prediction.get('learning_percentage') or 0)
+    avg_score = float(prediction.get('avg_score') or 0)
+    total_clicks = int(prediction.get('total_clicks') or 0)
+    risk = prediction.get('risk')
+
+    if risk == 'High':
+        main_reminder = {
+            'title': 'Cần cải thiện',
+            'body': 'Kết quả hiện tại đang ở mức rủi ro cao. Hãy ưu tiên ôn lại bài học gần nhất và liên hệ giảng viên nếu cần hỗ trợ.',
+            'tone': 'danger',
+            'icon': 'fa-triangle-exclamation',
+        }
+    elif risk == 'Medium':
+        main_reminder = {
+            'title': 'Cần duy trì nhịp học',
+            'body': 'Bạn đang ở vùng cần theo dõi. Hãy giữ lịch học đều và hoàn thành các bài đánh giá đúng hạn để tăng độ ổn định.',
+            'tone': 'warning',
+            'icon': 'fa-clock',
+        }
+    else:
+        main_reminder = {
+            'title': 'Tiếp tục phát huy',
+            'body': 'Tín hiệu học tập đang tích cực. Hãy duy trì thói quen hiện tại và tiếp tục nộp bài đúng tiến độ.',
+            'tone': 'success',
+            'icon': 'fa-circle-check',
+        }
+
+    score_reminder = {
+        'title': 'Tập trung điểm đánh giá',
+        'body': f'Điểm trung bình hiện tại là {avg_score:.1f}. Mục tiêu gần nhất là cải thiện chất lượng các bài nộp tiếp theo.',
+        'tone': 'warning' if avg_score < 65 else 'success',
+        'icon': 'fa-list-check',
+    }
+    activity_reminder = {
+        'title': 'Tăng tương tác học tập',
+        'body': f'Hệ thống ghi nhận {total_clicks} lượt hoạt động. Hãy vào lớp thường xuyên hơn để giữ tiến độ học tập.',
+        'tone': 'info' if total_clicks else 'warning',
+        'icon': 'fa-chart-line',
+    }
+
+    if learning_percentage >= 75:
+        score_reminder['body'] = (
+            f'Tỉ lệ tiếp thu dự đoán đạt {learning_percentage:.1f}%. Hãy giữ cách học hiện tại và ôn tập trước mỗi bài kiểm tra.'
+        )
+    elif learning_percentage < 55:
+        activity_reminder['body'] = (
+            f'Tỉ lệ tiếp thu dự đoán mới đạt {learning_percentage:.1f}%. Nên chia nhỏ mục tiêu học mỗi ngày và xem lại các phần còn yếu.'
+        )
+
+    return [main_reminder, score_reminder, activity_reminder]
 
 
 @role_required(UserProfile.LECTURER)
@@ -358,6 +412,42 @@ SECTION_TITLES = {
     'monitoring': 'System Monitoring',
 }
 
+STUDENT_SECTION_TITLES = {
+    'progress': 'Tiến độ học tập',
+    'predictions': 'Dự đoán kết quả',
+    'analytics': 'Phân tích học tập',
+    'notifications': 'Nhắc nhở',
+    'recommendations': 'Gợi ý cải thiện',
+}
+
+STUDENT_SECTION_PANELS = {
+    'progress': [
+        {'title': 'Theo dõi tiến độ', 'body': 'Cập nhật tỉ lệ tiếp thu, điểm đánh giá và mức độ hoàn thành trong quá trình học.', 'icon': 'fa-chart-line'},
+        {'title': 'Mốc cần chú ý', 'body': 'Ưu tiên các tuần có điểm hoặc tương tác thấp để tránh giảm hiệu suất cuối kỳ.', 'icon': 'fa-flag-checkered'},
+        {'title': 'Hoạt động học tập', 'body': 'Theo dõi số lượt truy cập, ngày hoạt động và nhịp học gần đây của sinh viên.', 'icon': 'fa-person-running'},
+    ],
+    'predictions': [
+        {'title': 'Kết quả dự đoán', 'body': 'Hiển thị khả năng Pass hoặc Fail/Withdrawn dựa trên dữ liệu demo và mô hình đã huấn luyện.', 'icon': 'fa-wand-magic-sparkles'},
+        {'title': 'Độ tin cậy', 'body': 'Mỗi dự đoán đi kèm confidence để sinh viên hiểu mức chắc chắn của mô hình.', 'icon': 'fa-gauge-high'},
+        {'title': 'Mức rủi ro', 'body': 'Rủi ro High, Medium hoặc Low giúp xác định mức ưu tiên cần cải thiện.', 'icon': 'fa-triangle-exclamation'},
+    ],
+    'analytics': [
+        {'title': 'Phân tích cá nhân', 'body': 'Tổng hợp điểm, tương tác và tiến độ để sinh viên nhìn rõ điểm mạnh và điểm yếu.', 'icon': 'fa-chart-pie'},
+        {'title': 'Xu hướng học tập', 'body': 'So sánh các chỉ số theo thời gian để phát hiện giai đoạn học tập bị chững lại.', 'icon': 'fa-arrow-trend-up'},
+        {'title': 'Chỉ số chính', 'body': 'Tập trung vào learning percentage, điểm trung bình, số bài đã nộp và tổng lượt hoạt động.', 'icon': 'fa-list-check'},
+    ],
+    'notifications': [
+        {'title': 'Nhắc nhở học tập', 'body': 'Hiển thị cảnh báo khi kết quả dự đoán hoặc tỉ lệ tiếp thu cần được cải thiện.', 'icon': 'fa-bell'},
+        {'title': 'Hạn cần theo dõi', 'body': 'Gợi ý sinh viên chú ý các bài đánh giá, lịch học và hoạt động còn thiếu.', 'icon': 'fa-calendar-check'},
+        {'title': 'Ưu tiên hiện tại', 'body': 'Nhắc nhở được sắp xếp theo mức rủi ro để sinh viên biết việc nào cần làm trước.', 'icon': 'fa-circle-exclamation'},
+    ],
+    'recommendations': [
+        {'title': 'Gợi ý cải thiện', 'body': 'Đưa ra hành động cụ thể như ôn lại bài, tăng tương tác hoặc hoàn thành bài đánh giá đúng hạn.', 'icon': 'fa-lightbulb'},
+        {'title': 'Kế hoạch ngắn hạn', 'body': 'Chia nhỏ mục tiêu học tập theo tuần để cải thiện dần điểm và tỉ lệ tiếp thu.', 'icon': 'fa-route'},
+        {'title': 'Tiếp tục phát huy', 'body': 'Nếu kết quả đang tốt, hệ thống khuyến khích duy trì nhịp học hiện tại.', 'icon': 'fa-circle-check'},
+    ],
+}
+
 
 @login_required
 def role_page(request, role, section):
@@ -368,7 +458,7 @@ def role_page(request, role, section):
 
 
 def _role_page(request, role, section):
-    title = SECTION_TITLES.get(section, section.replace('-', ' ').title())
+    title = section_title_for_role(role, section)
     return render(
         request,
         'shared/role_page.html',
@@ -389,15 +479,26 @@ def _role_page(request, role, section):
     )
 
 
+def section_title_for_role(role, section):
+    if role == UserProfile.STUDENT:
+        return STUDENT_SECTION_TITLES.get(section, section.replace('-', ' ').title())
+    return SECTION_TITLES.get(section, section.replace('-', ' ').title())
+
+
 def build_section_panels(role, section):
+    if role == UserProfile.STUDENT:
+        return STUDENT_SECTION_PANELS.get(section, [
+            {'title': 'Tổng quan', 'body': 'Thông tin học tập cá nhân được tổng hợp để sinh viên theo dõi tiến độ.', 'icon': 'fa-layer-group'},
+            {'title': 'Theo dõi', 'body': 'Các cảnh báo và gợi ý sẽ được cập nhật theo kết quả dự đoán hiện tại.', 'icon': 'fa-clock-rotate-left'},
+            {'title': 'Hành động tiếp theo', 'body': 'Ưu tiên những việc giúp cải thiện điểm số, tương tác và khả năng hoàn thành môn học.', 'icon': 'fa-list-check'},
+        ])
+
     base = [
         {'title': 'Overview', 'body': f'{SECTION_TITLES.get(section, section.title())} summary is ready for this workspace.', 'icon': 'fa-layer-group'},
         {'title': 'Recent activity', 'body': 'Latest updates, alerts, and actions appear here.', 'icon': 'fa-clock-rotate-left'},
         {'title': 'Export-ready data', 'body': 'Tables are structured for future PDF/Excel export integration.', 'icon': 'fa-file-export'},
     ]
-    if role == UserProfile.STUDENT:
-        base.append({'title': 'AI recommendation', 'body': 'Personalized interventions and feature explanations are grouped for review.', 'icon': 'fa-wand-magic-sparkles'})
-    elif role == UserProfile.LECTURER:
+    if role == UserProfile.LECTURER:
         base.append({'title': 'Class filter', 'body': 'Risk level, score, and attendance filters can be wired to live class data.', 'icon': 'fa-filter'})
     else:
         base.append({'title': 'Operations control', 'body': 'MLOps services, logs, model registry, and account workflows are grouped by priority.', 'icon': 'fa-server'})

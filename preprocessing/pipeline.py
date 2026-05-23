@@ -439,8 +439,8 @@ def add_features(frame: pd.DataFrame) -> pd.DataFrame:
         df["date_registration"],
         errors="coerce",
     ).fillna(0)
-    df["registered_flag"] = df["date_unregistration"].ne(-1).astype(int)
-    # Cột registered_flag được tạo ra bằng cách kiểm tra xem cột date_unregistration có khác -1 hay không. Nếu khác -1, có nghĩa là sinh viên đã hủy đăng ký, do đó registered_flag sẽ là 0. Nếu bằng -1, có nghĩa là sinh viên vẫn đang đăng ký, do đó registered_flag sẽ là 1.
+    df["registered_flag"] = df["date_unregistration"].eq(-1).astype(int)
+    # Cột registered_flag được tạo ra bằng cách kiểm tra xem cột date_unregistration có bằng -1 hay không. Nếu bằng -1, sinh viên vẫn đang đăng ký; nếu khác -1, sinh viên đã hủy đăng ký.
     df["registration_duration"] = np.where(
         df["date_unregistration"].ne(-1),
         df["date_unregistration"] - df["date_registration"],

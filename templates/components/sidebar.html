@@ -12,11 +12,11 @@
   <nav class="sidebar-nav">
     {% if active_role == "student" %}
       <a class="{% if active_section == 'dashboard' %}active{% endif %}" href="{% url 'accounts:student_dashboard' %}"><i class="fa-solid fa-table-cells-large"></i><span>Dashboard</span></a>
-      <a class="{% if active_section == 'progress' %}active{% endif %}" href="{% url 'accounts:student_page' 'progress' %}"><i class="fa-solid fa-chart-line"></i><span>Learning Progress</span></a>
-      <a class="{% if active_section == 'predictions' %}active{% endif %}" href="{% url 'accounts:student_page' 'predictions' %}"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Predictions</span></a>
-      <a class="{% if active_section == 'analytics' %}active{% endif %}" href="{% url 'accounts:student_page' 'analytics' %}"><i class="fa-solid fa-chart-pie"></i><span>Analytics</span></a>
-      <a class="{% if active_section == 'notifications' %}active{% endif %}" href="{% url 'accounts:student_page' 'notifications' %}"><i class="fa-solid fa-bell"></i><span>Notifications</span></a>
-      <a class="{% if active_section == 'recommendations' %}active{% endif %}" href="{% url 'accounts:student_page' 'recommendations' %}"><i class="fa-solid fa-lightbulb"></i><span>Recommendations</span></a>
+      <a class="{% if active_section == 'progress' %}active{% endif %}" href="{% url 'accounts:student_page' 'progress' %}"><i class="fa-solid fa-chart-line"></i><span>Tiến độ học tập</span></a>
+      <a class="{% if active_section == 'predictions' %}active{% endif %}" href="{% url 'accounts:student_page' 'predictions' %}"><i class="fa-solid fa-wand-magic-sparkles"></i><span>Dự đoán kết quả</span></a>
+      <a class="{% if active_section == 'analytics' %}active{% endif %}" href="{% url 'accounts:student_page' 'analytics' %}"><i class="fa-solid fa-chart-pie"></i><span>Phân tích học tập</span></a>
+      <a class="{% if active_section == 'notifications' %}active{% endif %}" href="{% url 'accounts:student_page' 'notifications' %}"><i class="fa-solid fa-bell"></i><span>Nhắc nhở</span></a>
+      <a class="{% if active_section == 'recommendations' %}active{% endif %}" href="{% url 'accounts:student_page' 'recommendations' %}"><i class="fa-solid fa-lightbulb"></i><span>Gợi ý cải thiện</span></a>
       <a class="{% if active_section == 'profile' %}active{% endif %}" href="{% url 'accounts:profile' %}"><i class="fa-solid fa-user"></i><span>Profile</span></a>
       <a class="{% if active_section == 'settings' %}active{% endif %}" href="{% url 'accounts:change_password' %}"><i class="fa-solid fa-gear"></i><span>Settings</span></a>
     {% elif active_role == "lecturer" %}

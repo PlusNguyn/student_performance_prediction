@@ -4,11 +4,15 @@
   <section class="content-band">
     <div class="section-heading">
       <div>
-        <p class="eyebrow">{{ active_role|title }}</p>
+        <p class="eyebrow">{% if active_role == "student" %}Sinh viên{% else %}{{ active_role|title }}{% endif %}</p>
         <h2>{{ page_title }}</h2>
       </div>
       <div class="toolbar">
-        <button class="btn btn-outline-primary" type="button"><i class="fa-solid fa-download"></i> Export</button>
+        {% if active_role == "student" %}
+          <a class="btn btn-outline-primary" href="{% url 'accounts:student_dashboard' %}"><i class="fa-solid fa-wand-magic-sparkles"></i> Xem dự đoán</a>
+        {% else %}
+          <button class="btn btn-outline-primary" type="button"><i class="fa-solid fa-download"></i> Export</button>
+        {% endif %}
       </div>
     </div>
 
@@ -26,8 +30,8 @@
       <article class="panel panel-span-8">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Analytics</p>
-            <h3>{{ page_title }} trend</h3>
+            <p class="eyebrow">{% if active_role == "student" %}Theo dõi{% else %}Analytics{% endif %}</p>
+            <h3>{% if active_role == "student" %}{{ page_title }} theo tuần{% else %}{{ page_title }} trend{% endif %}</h3>
           </div>
         </div>
         <div class="chart-box chart-tall"><canvas data-chart='{{ section_chart }}'></canvas></div>
@@ -35,25 +39,42 @@
       <article class="panel panel-span-4">
         <div class="panel-heading">
           <div>
-            <p class="eyebrow">Queue</p>
-            <h3>Priority items</h3>
+            <p class="eyebrow">{% if active_role == "student" %}Ưu tiên{% else %}Queue{% endif %}</p>
+            <h3>{% if active_role == "student" %}Việc cần làm{% else %}Priority items{% endif %}</h3>
           </div>
         </div>
         <div class="stack-list">
-          <div class="alert-card alert-info">
-            <i class="fa-solid fa-circle-info"></i>
-            <div>
-              <strong>Data pipeline ready</strong>
-              <p>Connect this view to live records when APIs are available.</p>
+          {% if active_role == "student" %}
+            <div class="alert-card alert-info">
+              <i class="fa-solid fa-circle-info"></i>
+              <div>
+                <strong>Xem kết quả mới nhất</strong>
+                <p>Kiểm tra dashboard cá nhân để theo dõi dự đoán, mức rủi ro và tỉ lệ tiếp thu.</p>
+              </div>
             </div>
-          </div>
-          <div class="alert-card alert-warning">
-            <i class="fa-solid fa-triangle-exclamation"></i>
-            <div>
-              <strong>Review threshold</strong>
-              <p>Risk filters and alert rules are prepared for role access.</p>
+            <div class="alert-card alert-warning">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <div>
+                <strong>Ưu tiên điểm yếu</strong>
+                <p>Tập trung vào phần có điểm thấp, ít tương tác hoặc đang được hệ thống nhắc nhở.</p>
+              </div>
             </div>
-          </div>
+          {% else %}
+            <div class="alert-card alert-info">
+              <i class="fa-solid fa-circle-info"></i>
+              <div>
+                <strong>Data pipeline ready</strong>
+                <p>Connect this view to live records when APIs are available.</p>
+              </div>
+            </div>
+            <div class="alert-card alert-warning">
+              <i class="fa-solid fa-triangle-exclamation"></i>
+              <div>
+                <strong>Review threshold</strong>
+                <p>Risk filters and alert rules are prepared for role access.</p>
+              </div>
+            </div>
+          {% endif %}
         </div>
       </article>
     </div>
@@ -61,43 +82,61 @@
     <article class="panel mt-4">
       <div class="panel-heading">
         <div>
-          <p class="eyebrow">Records</p>
-          <h3>{{ page_title }} table</h3>
+          <p class="eyebrow">{% if active_role == "student" %}Lộ trình{% else %}Records{% endif %}</p>
+          <h3>{% if active_role == "student" %}{{ page_title }} cần theo dõi{% else %}{{ page_title }} table{% endif %}</h3>
         </div>
         <div class="table-tools">
-          <input class="form-control" type="search" placeholder="Search">
-          <select class="form-select">
-            <option>All statuses</option>
-            <option>Active</option>
-            <option>Warning</option>
-            <option>Archived</option>
-          </select>
+          {% if active_role == "student" %}
+            <input class="form-control" type="search" placeholder="Tìm mục">
+            <select class="form-select">
+              <option>Tất cả trạng thái</option>
+              <option>Đang theo dõi</option>
+              <option>Cần chú ý</option>
+              <option>Đã lưu</option>
+            </select>
+          {% else %}
+            <input class="form-control" type="search" placeholder="Search">
+            <select class="form-select">
+              <option>All statuses</option>
+              <option>Active</option>
+              <option>Warning</option>
+              <option>Archived</option>
+            </select>
+          {% endif %}
         </div>
       </div>
       <div class="table-responsive">
         <table class="table app-table align-middle">
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Status</th>
-              <th>Score</th>
-              <th>Updated</th>
-              <th class="text-end">Action</th>
+              {% if active_role == "student" %}
+                <th>Mục</th>
+                <th>Trạng thái</th>
+                <th>Điểm</th>
+                <th>Cập nhật</th>
+                <th class="text-end">Thao tác</th>
+              {% else %}
+                <th>Name</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Updated</th>
+                <th class="text-end">Action</th>
+              {% endif %}
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>{{ page_title }} baseline</td>
-              <td><span class="status-pill status-success">Active</span></td>
+              <td>{% if active_role == "student" %}Mục tiêu hiện tại{% else %}{{ page_title }} baseline{% endif %}</td>
+              <td><span class="status-pill status-success">{% if active_role == "student" %}Đang theo dõi{% else %}Active{% endif %}</span></td>
               <td>86</td>
-              <td>Today</td>
+              <td>{% if active_role == "student" %}Hôm nay{% else %}Today{% endif %}</td>
               <td class="text-end"><button class="icon-btn" type="button" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
             </tr>
             <tr>
-              <td>{{ page_title }} review</td>
-              <td><span class="status-pill status-warning">Warning</span></td>
+              <td>{% if active_role == "student" %}Nội dung cần ôn lại{% else %}{{ page_title }} review{% endif %}</td>
+              <td><span class="status-pill status-warning">{% if active_role == "student" %}Cần chú ý{% else %}Warning{% endif %}</span></td>
               <td>64</td>
-              <td>Yesterday</td>
+              <td>{% if active_role == "student" %}Hôm qua{% else %}Yesterday{% endif %}</td>
               <td class="text-end"><button class="icon-btn" type="button" title="Open"><i class="fa-solid fa-arrow-up-right-from-square"></i></button></td>
             </tr>
           </tbody>

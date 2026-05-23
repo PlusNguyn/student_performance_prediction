@@ -128,6 +128,13 @@ class ProfileUpdateForm(AccountUpdateForm):
     role = forms.ChoiceField(choices=UserProfile.ROLE_CHOICES, disabled=True)
     is_active = forms.BooleanField(required=False, disabled=True, label='Account enabled')
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        profile, _ = UserProfile.objects.get_or_create(user=self.user_instance)
+        if profile.role == UserProfile.STUDENT:
+            self.fields['account_code'].disabled = True
+            self.fields['account_code'].help_text = 'Only an administrator can change the assigned Student ID.'
+
 
 class AdminPasswordResetForm(BootstrapFormMixin, forms.Form):
     new_password = forms.CharField(widget=forms.PasswordInput, min_length=8)

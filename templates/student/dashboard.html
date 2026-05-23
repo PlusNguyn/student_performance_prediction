@@ -60,6 +60,27 @@
           <p class="text-muted mb-0 text-center">This result is calculated from the demo dataset and local model artifacts.</p>
         </article>
       </div>
+
+      <article class="panel mt-4">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Nhắc nhở</p>
+            <h3>Gợi ý học tập cá nhân</h3>
+          </div>
+          <span class="badge-soft"><i class="fa-solid fa-lightbulb"></i> {{ prediction.risk }} risk</span>
+        </div>
+        <div class="reminder-grid">
+          {% for reminder in student_reminders %}
+            <div class="alert-card alert-{{ reminder.tone }}">
+              <i class="fa-solid {{ reminder.icon }}"></i>
+              <div>
+                <strong>{{ reminder.title }}</strong>
+                <p>{{ reminder.body }}</p>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </article>
     {% endif %}
   </section>
 {% endblock %}

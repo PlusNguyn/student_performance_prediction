@@ -650,6 +650,12 @@ a {
   gap: 12px;
 }
 
+.reminder-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .alert-card,
 .recommend-card,
 .service-row,
@@ -1122,6 +1128,10 @@ a {
   .service-row .badge-soft {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .reminder-grid {
+    grid-template-columns: 1fr;
   }
 
   .toast-stack {
