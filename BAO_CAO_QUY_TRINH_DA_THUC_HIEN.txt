@@ -1,0 +1,580 @@
+BÁO CÁO NHỮNG NỘI DUNG ĐÃ THỰC HIỆN TRONG HỆ THỐNG DỰ ĐOÁN KẾT QUẢ HỌC TẬP
+===============================================================================
+
+MỤC ĐÍCH TÀI LIỆU
+------------------
+Tài liệu này trình bày quy trình đã được xây dựng trong dự án:
+1. Tiền xử lý dữ liệu sinh viên và tạo đặc trưng cho mô hình.
+2. Huấn luyện, đánh giá và lưu hai mô hình dự đoán.
+3. Theo dõi thí nghiệm, đăng ký model và promote model production bằng MLflow.
+4. Đóng gói và vận hành hệ thống bằng Docker Compose.
+
+Các file chính được đọc để tổng hợp tài liệu:
+- preprocessing/pipeline.py
+- model_training/training.py
+- mlflow_tracking/registry.py
+- Dockerfile
+- docker-compose.yml
+- .mlflow/Dockerfile
+- .airflow/Dockerfile
+
+Để làm rõ luồng vận hành mà Docker Compose cung cấp, tài liệu cũng đối chiếu
+các Django management command và DAG Airflow được các dịch vụ sử dụng.
+
+Lưu ý: nội dung dưới đây mô tả chức năng đã được lập trình. Kết quả của một
+lần chạy thực tế còn phụ thuộc dữ liệu đầu vào, biến môi trường, database và
+tình trạng sẵn sàng của dịch vụ MLflow.
+
+
+1. TỔNG QUAN KIẾN TRÚC VÀ LUỒNG XỬ LÝ
+--------------------------------------
+Hệ thống triển khai một luồng machine learning từ dữ liệu thô đến model được
+chọn cho production:
+
+Dữ liệu CSV OULAD thô
+    -> Làm sạch và tạo đặc trưng
+    -> Tạo tập train/test
+    -> Huấn luyện hai mô hình Random Forest
+    -> Đánh giá và lưu artifact
+    -> Log run, đăng ký model vào MLflow
+    -> Chọn version tốt nhất và gán alias "production"
+
+Hệ thống xử lý đồng thời hai bài toán:
+- Classification: dự đoán sinh viên đạt hay không đạt, target `target_pass`.
+- Regression: dự đoán phần trăm học tập, target `learning_percentage`.
+
+Các thành phần vận hành:
+- Django chứa mã xử lý và cung cấp các lệnh chạy pipeline.
+- PostgreSQL lưu dữ liệu ứng dụng, thông tin artifact và backend của MLflow.
+- MLflow lưu lịch sử run, artifact và các version model đã đăng ký.
+- Airflow điều phối pipeline lần đầu và quy trình retrain định kỳ.
+
+
+2. TIỀN XỬ LÝ DỮ LIỆU: preprocessing/pipeline.py
+-------------------------------------------------
+
+2.1. Cấu hình đường dẫn
+
+Class `PreprocessingPaths` quản lý các thư mục:
+- `raw_dir`: dữ liệu CSV thô, mặc định `data/raw`.
+- `preprocessed_dir`: dữ liệu sau làm sạch/tổng hợp, mặc định
+  `data/preprocessed`.
+- `feature_dir`: feature và tập train/test, mặc định `data/feature`.
+- `plot_dir`: biểu đồ, mặc định `data/preprocessed/plots`.
+
+Hàm điều phối chính là `run_preprocessing()`. Hàm này tạo thư mục cần thiết,
+đọc dữ liệu, làm sạch, tạo target/feature, chia tập dữ liệu, lưu artifact, log
+MLflow, đồng bộ PostgreSQL và trả về bản tóm tắt kết quả.
+
+2.2. Nạp dữ liệu đầu vào
+
+`load_raw_tables()` đọc các bảng OULAD:
+- `studentInfo.csv`: thông tin và kết quả cuối cùng của sinh viên.
+- `studentRegistration.csv`: đăng ký và hủy đăng ký.
+- `studentAssessment.csv`: điểm đánh giá của sinh viên.
+- `studentVle.csv`: tương tác/click trên môi trường học tập.
+- `assessments.csv`: thông tin bài đánh giá và trọng số.
+- `vle.csv`: thông tin VLE.
+- `courses.csv`: thông tin khóa học.
+
+Khi đọc file, ký hiệu `?` được coi là giá trị thiếu. Nếu file nguồn không tồn
+tại, pipeline báo lỗi chỉ rõ file còn thiếu.
+
+2.3. Làm sạch dữ liệu
+
+`clean_raw_tables()` sao chép dữ liệu gốc trước khi xử lý, sau đó:
+- Điền thiếu `imd_band` bằng mode, hoặc `Unknown` nếu không có mode.
+- Chuyển `date_registration` sang số và điền thiếu bằng median.
+- Chuyển `date_unregistration` sang số và điền thiếu bằng `-1`; giá trị này
+  biểu diễn sinh viên chưa hủy đăng ký.
+- Chuyển `score`, `is_banked` sang số và điền thiếu bằng `0`.
+- Chuyển `assessments.date` sang số và điền thiếu bằng median.
+- Chuyển `assessments.weight` sang số và điền thiếu bằng `1`.
+- Nếu VLE có `week_from`, `week_to`, chuyển sang số và điền thiếu bằng `-1`.
+
+Pipeline tính thống kê dữ liệu thiếu trước và sau khi làm sạch để đưa vào hồ
+sơ tiền xử lý.
+
+2.4. Tạo hai biến mục tiêu
+
+Target classification `target_pass` được tạo từ `final_result`:
+- `Pass`, `Distinction` -> `1`.
+- `Fail`, `Withdrawn` -> `0`.
+- Giá trị thiếu hoặc không khớp -> `0`.
+
+Target regression `learning_percentage` được tạo từ điểm có trọng số:
+- Nối bảng điểm với bảng assessment để lấy trọng số.
+- Nếu thiếu trọng số, dùng giá trị mặc định `1`.
+- Tính điểm có trọng số: `weighted_score = score * weight`.
+- Gom nhóm theo `code_module`, `code_presentation`, `id_student`.
+- Tính `learning_percentage = tổng weighted_score / tổng weight`.
+- Điền thiếu khi cần và giới hạn kết quả trong khoảng `0` đến `100`.
+
+2.5. Tổng hợp đặc trưng đánh giá và VLE
+
+`build_assessment_features()` tạo:
+- `total_score`: tổng điểm.
+- `avg_score`: điểm trung bình.
+- `min_score`, `max_score`: điểm nhỏ nhất/lớn nhất.
+- `num_assessments`: số bài đánh giá.
+- `late_submissions`: tổng giá trị `is_banked`.
+- `learning_percentage`: target hồi quy tính từ điểm có trọng số.
+
+`build_vle_features()` tạo:
+- `total_clicks`: tổng số click.
+- `active_days`: số ngày có hoạt động.
+- `avg_daily_clicks`: click trung bình theo bản ghi hoạt động.
+- `max_clicks_day`: số click lớn nhất trong một ngày.
+
+`build_modeling_dataset()` nối thông tin sinh viên, đăng ký, đặc trưng điểm và
+đặc trưng VLE theo khóa sinh viên/môn học/kỳ học. Những cột số tổng hợp bị
+thiếu sau khi nối được điền bằng `0`.
+
+2.6. Feature engineering
+
+`add_features()` bổ sung các nhóm đặc trưng sau:
+
+Thông tin đăng ký:
+- `registration_lead_days`: số ngày đăng ký trước thời điểm bắt đầu khóa.
+- `registered_flag`: cờ cho biết sinh viên chưa hủy đăng ký.
+- `registration_duration`: khoảng thời gian đăng ký nếu đã hủy; nếu chưa hủy
+  thì là `-1`.
+- `late_registration_flag`: cờ đăng ký muộn hơn mức trung vị.
+
+Thông tin cá nhân được mã hóa:
+- `imd_num`: chuyển nhóm IMD thành số trung điểm.
+- `age_num`: chuyển nhóm tuổi thành giá trị số đại diện.
+- `edu_level`: mã hóa thứ bậc trình độ học vấn.
+- `gender_m`: cờ giới tính nam.
+- `disability_flag`: cờ khuyết tật.
+
+Đặc trưng học tập và mức độ tương tác:
+- `clicks_per_credit`: click trên mỗi tín chỉ.
+- `score_per_assess`: điểm trên mỗi bài đánh giá.
+- `clicks_per_day`: click trên mỗi ngày đăng ký có thời lượng dương.
+- `clicks_per_week`: `clicks_per_day * 7`.
+- `engagement_intensity`: tổng click được chuẩn hóa theo độ lệch chuẩn.
+- `credit_load_category`: nhóm tín chỉ `light`, `medium`, `heavy`.
+- `assessment_density`: số bài đánh giá trên mỗi tín chỉ.
+- `score_per_credit`: điểm trên mỗi tín chỉ.
+- `activity_efficiency`: điểm trên bài đánh giá so với click trên tín chỉ.
+- `low_activity_flag`: cờ có tổng click thấp hơn trung vị.
+- `high_click_but_low_score_flag`: click cao nhưng điểm thấp hơn trung vị.
+
+Hàm `safe_divide()` giúp phép chia không sinh lỗi do mẫu bằng 0 hoặc vô cực.
+Cuối bước feature engineering, giá trị vô cực/NaN trong cột số được đưa về `0`.
+
+2.7. Mã hóa feature và chia train/test
+
+Các cột categorical được mã hóa one-hot:
+- `code_module`
+- `code_presentation`
+- `region`
+- `credit_load_category`
+
+`prepare_features()` thực hiện:
+- Điền thiếu cột số bằng median.
+- Điền thiếu cột categorical bằng mode hoặc `Unknown`.
+- Ghi nhận các mức category.
+- One-hot encoding với `drop_first=True`.
+- Tách khỏi X các cột target, `id_student`, `final_result`.
+- Tạo `y_class = target_pass` và `y_reg = learning_percentage`.
+
+`split_feature_sets()` tạo hai bộ dữ liệu riêng:
+- Classification: chia có stratify theo `target_pass` nếu có từ hai lớp.
+- Regression: chia riêng cho `learning_percentage`.
+- Cấu hình mặc định: `test_size = 0.2`, `random_state = 42`.
+
+2.8. Biểu đồ và hồ sơ tiền xử lý
+
+Các biểu đồ được sinh ra:
+- `final_result_distribution.png`: phân phối kết quả cuối.
+- `pass_fail_distribution.png`: phân phối nhãn đạt/không đạt.
+- `learning_percentage_distribution.png`: phân phối target hồi quy.
+- `feature_correlation.png`: heatmap tương quan các feature quan trọng.
+
+`preprocessing_profile.json` ghi:
+- Kích thước các bảng dữ liệu thô.
+- Số giá trị thiếu trước và sau làm sạch.
+- Số dòng/cột của dataset đã mã hóa.
+- Danh sách feature.
+- Phân phối classification target.
+- Mean/min/max của `learning_percentage`.
+- Tỷ lệ test, seed và đường dẫn biểu đồ.
+
+2.9. Artifact đầu ra của preprocessing
+
+Trong `data/preprocessed`:
+- `students_labeled.csv`
+- `student_registration_cleaned.csv`
+- `vle_features.csv`
+- `assessment_features.csv`
+- `modeling_dataset.csv`
+- `preprocessed_dataset.csv`
+- `preprocessing_profile.json`
+- Các file ảnh trong thư mục `plots`.
+
+Trong `data/feature`:
+- `X.csv`, `y.csv`
+- `X_class.csv`, `y_class.csv`
+- `X_reg.csv`, `y_reg.csv`
+- Các tập `X_train`, `X_test`, `y_train`, `y_test` cho từng bài toán.
+- `feature_columns.json`, `classification_feature_columns.json`,
+  `regression_feature_columns.json`.
+- `medians.json`, `category_levels.json`, `encoders.joblib`, `metadata.json`.
+
+2.10. Tracking và đồng bộ sau preprocessing
+
+Nếu `MLFLOW_TRACKING_URI` được cấu hình, preprocessing tạo MLflow run
+`preprocess-data`, log:
+- Param: pipeline, `test_size`, `random_state`, tên hai target.
+- Metric: số dòng, số feature, tỷ lệ pass/distinction, mean/min/max của
+  `learning_percentage`.
+- Artifact: thư mục preprocessed, feature và plots.
+
+Pipeline tiếp tục gọi lớp storage để đồng bộ artifact và metadata sang
+PostgreSQL. Lỗi MLflow hoặc PostgreSQL được ghi trong kết quả trả về để quy
+trình có thể báo trạng thái rõ ràng.
+
+
+3. HUẤN LUYỆN MODEL: model_training/training.py
+-----------------------------------------------
+
+3.1. Đầu vào huấn luyện
+
+`TrainingPaths` quản lý:
+- `feature_dir`: nơi đọc feature split, mặc định `data/feature`.
+- `model_dir`: nơi lưu model/artifact, mặc định `models`.
+- `params_path`: file JSON chứa tham số tùy chọn.
+
+`load_feature_splits()` yêu cầu các file train/test classification, train/test
+regression, `feature_columns.json` và `medians.json`. Nếu thiếu file, lệnh
+huấn luyện thông báo cần chạy `preprocess_data` trước.
+
+3.2. Mô hình đã triển khai
+
+Hệ thống huấn luyện:
+- `random_forest_classifier`: `RandomForestClassifier` dự đoán `target_pass`.
+- `random_forest_regressor`: `RandomForestRegressor` dự đoán
+  `learning_percentage`.
+
+Tham số mặc định classifier:
+- `n_estimators = 200`
+- `max_depth = None`
+- `min_samples_leaf = 1`
+- `class_weight = "balanced"`
+- `random_state = 42` hoặc seed được truyền vào
+- `n_jobs = -1`
+
+Tham số mặc định regressor:
+- `n_estimators = 200`
+- `max_depth = None`
+- `min_samples_leaf = 1`
+- `random_state = 42` hoặc seed được truyền vào
+- `n_jobs = -1`
+
+Nếu file cấu hình tồn tại, các mục `classification_model_params` và
+`regression_model_params` ghi đè tham số mặc định. Nhờ vậy bước huấn luyện có
+thể sử dụng hyperparameter do bước tuning tạo ra.
+
+3.3. Đánh giá hai mô hình
+
+Classifier được đánh giá bằng:
+- `accuracy`
+- `precision`
+- `recall`
+- `f1`
+- `roc_auc`, chỉ khi tập test có đủ hai lớp và model có `predict_proba`.
+
+Regressor dự đoán trên tập test, sau đó kết quả được clip trong khoảng
+`0..100`. Các metric gồm:
+- `rmse`: sai số căn bậc hai trung bình, càng thấp càng tốt.
+- `mae`: sai số tuyệt đối trung bình, càng thấp càng tốt.
+- `r2`: mức giải thích biến thiên, thường càng cao càng tốt.
+- `within_10_percent`: tỷ lệ dự đoán lệch không quá 10 điểm phần trăm.
+
+Pipeline cũng tạo classification report và confusion matrix với hai nhãn:
+`fail_or_withdrawn`, `pass_or_distinction`.
+
+Thông tin model selection khai báo:
+- Classification lựa chọn theo `f1`.
+- Regression lựa chọn theo `rmse`.
+
+3.4. Artifact huấn luyện được lưu
+
+Trong thư mục `models`:
+- `classification_model.joblib`: classifier đã fit.
+- `regression_model.joblib`: regressor đã fit.
+- `model_metrics.json`: metric của hai model.
+- `model_selection.json`: task, target, metric lựa chọn và cấu hình training.
+- `classification_report.json`: báo cáo phân loại chi tiết.
+- `confusion_matrix.json`: ma trận nhầm lẫn.
+- `features.json`: feature sử dụng.
+- `medians.json`: median được kế thừa từ preprocessing.
+
+3.5. MLflow trong bước training
+
+Nếu có MLflow, run `train-classification-regression` được tạo và ghi:
+- Tên task/model, seed, số feature, tên target.
+- Tham số của từng estimator với prefix theo task.
+- Metric có prefix `classification.` hoặc `regression.`.
+- Các artifact JSON phục vụ báo cáo và tái lập.
+
+Hai model được log và đăng ký vào MLflow Model Registry với tên:
+- `<MLFLOW_REGISTERED_MODEL_NAME>-classification`
+- `<MLFLOW_REGISTERED_MODEL_NAME>-regression`
+
+Mỗi lần training có thể sinh version mới để module registry so sánh và
+promote.
+
+3.6. Đồng bộ PostgreSQL
+
+Sau huấn luyện, output được chuyển sang tầng storage để lưu trong PostgreSQL:
+- Model binary thuộc nhóm `models`.
+- File báo cáo/cấu hình thuộc nhóm `metadata`.
+- Nhóm `explainers` dành sẵn cho artifact giải thích model trong tương lai.
+
+Thông tin đồng bộ gồm metric, parameter, metadata và định danh MLflow run.
+
+
+4. MODEL REGISTRY VÀ PRODUCTION: mlflow_tracking/registry.py
+-------------------------------------------------------------
+
+4.1. Vai trò
+
+Module registry dùng `MlflowClient` để:
+- Tìm các version của model đã được đăng ký.
+- Chọn version tốt nhất theo metric.
+- Gán alias, mặc định là `production`.
+- Ghi lịch sử promotion vào database Django.
+
+Hai task được hỗ trợ là `classification` và `regression`. Tên registered model
+được gắn suffix `-classification` hoặc `-regression`.
+
+Ví dụ với base name mặc định trong Compose là `student-performance-best-model`:
+- `student-performance-best-model-classification`
+- `student-performance-best-model-regression`
+
+4.2. Metric ưu tiên khi lựa chọn model
+
+Classification:
+1. `classification.f1`
+2. `classification.roc_auc`
+3. `classification.accuracy`
+4. `classification.precision`
+5. `classification.recall`
+
+Regression:
+1. `regression.rmse`
+2. `regression.mae`
+3. `regression.r2`
+4. `regression.within_10_percent`
+
+4.3. Promote model tốt nhất
+
+`promote_best_model_version()`:
+- Xác định task từ tham số, metric hoặc tên model.
+- Tìm các version trong MLflow.
+- Chọn metric được chỉ định hoặc metric ưu tiên có trong các run.
+- Lấy điểm của các version có metric đó.
+- Sắp xếp, chọn version tốt nhất.
+- Đọc version hiện đang giữ alias nếu có.
+- Nếu không phải `dry_run`, gán alias production cho version mới.
+- Trả kết quả và ghi lịch sử promotion.
+
+Quy tắc chọn hướng so sánh:
+- Metric chứa `rmse`, `mae`, `mse`, `loss`, `error` là lower-is-better.
+- Metric khác mặc định là higher-is-better.
+- Có thể chỉ định hướng so sánh khi promote một task cụ thể.
+
+4.4. Các cách promote khác
+
+`promote_specific_model_version()`:
+- Promote trực tiếp một version chỉ định.
+- Không so sánh version đó với version khác.
+- Vẫn đọc metric và lưu lịch sử.
+
+`promote_default_model_versions()`:
+- Tìm và promote version tốt nhất cho cả classification và regression.
+- Phù hợp sau khi pipeline vừa tạo version mới của hai model.
+
+4.5. Tải model production và lịch sử promotion
+
+`load_production_model_uri()` tạo URI:
+`models:/<model_name>@<alias>`
+
+Nhờ URI này, nơi dự đoán có thể tải model đang ở production mà không phải gắn
+cứng một số version.
+
+Mỗi lần promote lưu bản ghi `ModelPromotion` gồm:
+- Tên model, alias, version mới và run ID.
+- Metric cùng giá trị được dùng để ghi nhận model.
+- Version trước đó nếu có.
+- Trạng thái `dry_run`.
+- Nguồn promote: `best_metric` hoặc `specific_version`.
+
+
+5. CÁC LỆNH DJANGO KÍCH HOẠT PIPELINE
+-------------------------------------
+Các module chính được gọi qua management command:
+
+1. `python manage.py preprocess_data`
+   - Chạy tiền xử lý, tạo feature, split, plots và metadata.
+   - Hỗ trợ tham số thư mục, `test-size` và `seed`.
+
+2. `python manage.py train_models`
+   - Huấn luyện classifier và regressor.
+   - Hỗ trợ `--params-path` để dùng hyperparameter đã tune.
+   - In metric cùng trạng thái MLflow/PostgreSQL.
+
+3. `python manage.py promote_best_model`
+   - Promote cả hai task hoặc một task riêng.
+   - Hỗ trợ `--metric`, `--model-version`, `--alias`,
+     `--lower-is-better`, `--dry-run`.
+
+
+6. DOCKERFILE ỨNG DỤNG DJANGO
+------------------------------
+Dockerfile tại thư mục gốc:
+- Dùng base image mặc định `python:3.10-slim`, có thể ghi đè qua
+  `PYTHON_BASE_IMAGE`.
+- Cấu hình Python không ghi `.pyc`, log không buffer và cấu hình pip.
+- Đặt work directory là `/app`.
+- Cài `build-essential`, `libgomp1`, `libpq-dev` để hỗ trợ thư viện ML và
+  PostgreSQL.
+- Cài dependency từ `requirements.txt`.
+- Copy mã nguồn vào image.
+- Expose cổng `8000`.
+- Mặc định chạy Django tại `0.0.0.0:8000`.
+
+Trong Docker Compose, command Django chạy migration trước, sau đó khởi động
+web server.
+
+
+7. DOCKERFILE DỊCH VỤ MLFLOW
+-----------------------------
+`.mlflow/Dockerfile`:
+- Dùng `python:3.10-slim`.
+- Đặt work directory `/mlflow`.
+- Cài dependency hệ thống cho PostgreSQL.
+- Cài `mlflow==2.22.5` và `psycopg2-binary==2.9.12`.
+- Expose cổng `5000`.
+- Chạy MLflow server với backend store lấy từ `MLFLOW_BACKEND_STORE_URI`.
+- Phục vụ artifact tại `/mlflow/artifacts`.
+
+Trong kiến trúc này, metadata MLflow/model registry nằm ở PostgreSQL, còn file
+artifact được giữ trên volume của MLflow.
+
+
+8. DOCKERFILE DỊCH VỤ AIRFLOW
+------------------------------
+`.airflow/Dockerfile` mở rộng image `apache/airflow:2.10.5-python3.10`:
+- Cài `libgomp1` cho tính toán machine learning.
+- Cài các dependency dự án như Django, pandas, scikit-learn, MLflow, Optuna
+  và driver PostgreSQL.
+
+Nhờ vậy Airflow có thể gọi mã Django và điều phối pipeline từ container.
+
+
+9. DOCKER COMPOSE VÀ KẾT NỐI DỊCH VỤ
+------------------------------------
+
+9.1. `postgres`
+- Image `postgres:16-alpine`.
+- Database/user/password lấy từ biến môi trường với giá trị phát triển mặc định.
+- Public port mặc định `5432`.
+- Lưu bền vững bằng volume `postgres_data`.
+- Có healthcheck; dịch vụ phụ thuộc chỉ bắt đầu khi database sẵn sàng.
+
+9.2. `django`
+- Build từ Dockerfile gốc.
+- Phụ thuộc PostgreSQL healthy.
+- Kết nối MLflow tại `http://mlflow:5000`.
+- Dùng các biến `MLFLOW_EXPERIMENT_NAME` và `MLFLOW_REGISTERED_MODEL_NAME`.
+- Mount project vào `/app`.
+- Mở cổng mặc định `8000`.
+- Chạy Django migration trước web server.
+
+9.3. `mlflow`
+- Build từ `.mlflow/Dockerfile`.
+- Phụ thuộc PostgreSQL healthy.
+- Dùng PostgreSQL làm backend store.
+- Mount `mlflow_artifacts` tại `/mlflow/artifacts`.
+- Mở cổng mặc định `5000`, có healthcheck `/health`.
+
+9.4. `airflow`
+- Build từ `.airflow/Dockerfile`.
+- Phụ thuộc PostgreSQL và MLflow healthy.
+- Nhận cấu hình đường dẫn dữ liệu, model, tuning, số trial, CV split và lịch
+  retrain từ biến môi trường.
+- Mount DAG, logs, plugins và project.
+- Chạy migrate database Airflow, tạo/cập nhật admin, rồi khởi động scheduler
+  và webserver.
+- Mở cổng mặc định `8080`.
+
+9.5. Volume
+- `postgres_data`: lưu bền vững dữ liệu PostgreSQL.
+- `mlflow_artifacts`: lưu bền vững artifact MLflow.
+
+
+10. ĐIỀU PHỐI BẰNG AIRFLOW
+--------------------------
+Dịch vụ Airflow nạp hai DAG liên quan đến pipeline.
+
+DAG khởi tạo một lần `student_performance_training_pipeline`:
+1. Chạy Django migration.
+2. Chạy `preprocess_data`.
+3. Chạy `tune_best_model` bằng Optuna và cross-validation.
+4. Chạy `train_models` với file tham số tốt nhất được sinh từ tuning.
+5. Chạy `promote_best_model`.
+
+DAG retrain định kỳ `student_performance_weekly_retraining_pipeline`:
+- Lịch mặc định `0 2 * * 1`: 02:00 sáng thứ Hai hàng tuần theo múi giờ
+  Asia/Ho_Chi_Minh.
+- Lần lượt migrate, nạp lại dữ liệu raw, tune, retrain và promote.
+- Cho phép ghi đè thư mục, số trial, số fold CV, file tham số và lịch chạy
+  thông qua biến môi trường trong Docker Compose.
+
+
+11. LIÊN KẾT GIỮA CÁC GIAI ĐOẠN
+--------------------------------
+Preprocessing:
+- Chuyển dữ liệu OULAD thô thành feature và hai target.
+- Sinh train/test split, metadata và biểu đồ.
+
+Training:
+- Đọc đúng output của preprocessing.
+- Huấn luyện, đánh giá và lưu hai model.
+- Log và đăng ký hai registered model trên MLflow.
+
+Registry:
+- Đọc các version do training đăng ký.
+- Chọn model theo metric tương ứng từng task.
+- Gán alias production cho version được lựa chọn.
+
+Vận hành:
+- PostgreSQL lưu dữ liệu và MLflow metadata.
+- MLflow quản lý run, artifact, model registry.
+- Airflow tự động hóa pipeline và retraining.
+- Docker Compose kết nối toàn bộ dịch vụ trong một môi trường chạy thống nhất.
+
+
+12. KẾT QUẢ HỆ THỐNG ĐÃ HỖ TRỢ
+-------------------------------
+Hệ thống hiện có khả năng:
+- Đọc và làm sạch dữ liệu OULAD.
+- Tạo feature từ thông tin cá nhân, điểm, đăng ký và tương tác VLE.
+- Dự đoán đồng thời khả năng pass và phần trăm học tập.
+- Đánh giá model bằng metric phù hợp từng bài toán.
+- Lưu dataset, biểu đồ, metadata và model artifact.
+- Theo dõi preprocessing/training bằng MLflow.
+- Đăng ký, version hóa và promote model production theo metric.
+- Ghi nhận lịch sử promotion.
+- Đồng bộ đầu ra với PostgreSQL.
+- Đóng gói các thành phần bằng Docker.
+- Chạy pipeline khởi tạo và retrain định kỳ bằng Airflow.
+
+Đây là một luồng MLOps hoàn chỉnh ở mức triển khai dự án: dữ liệu thô được
+biến đổi thành feature, model được huấn luyện và đánh giá, kết quả được
+tracking/version hóa, sau đó model tốt nhất có thể được đưa vào production để
+phục vụ dự đoán.

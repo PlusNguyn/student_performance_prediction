@@ -64,6 +64,10 @@ def sync_preprocessing_outputs_to_postgres(
     *,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, list[str]]:
+    '''
+    Đồng bộ các file đầu ra của pipeline vào PostgreSQL theo loại dữ liệu.
+    Trả về tên các dataset và artifact đã được đồng bộ thành công.
+    '''
     synced = {"datasets": [], "files": []}
     metadata = metadata or {}
 
@@ -72,6 +76,7 @@ def sync_preprocessing_outputs_to_postgres(
         if not path.exists():
             continue
 
+        # Dataset dạng bảng được lưu kèm từng dòng để có thể truy vấn trong database.
         if name in PREPROCESSED_DATASETS:
             _sync_tabular_dataset(
                 kind=ProcessedDataset.PREPROCESSED,
@@ -92,6 +97,7 @@ def sync_preprocessing_outputs_to_postgres(
             synced["datasets"].append(name)
             continue
 
+        # Metadata và biểu đồ được lưu dưới dạng artifact file thay vì dataset dạng bảng.
         if name in FEATURE_FILE_ARTIFACTS:
             _sync_file_artifact(
                 kind=PipelineFileArtifact.FEATURE_METADATA,
@@ -111,6 +117,10 @@ def _sync_tabular_dataset(
     path: Path,
     metadata: dict[str, Any],
 ) -> ProcessedDataset:
+    '''
+    Đọc một file CSV và lưu thông tin dataset cùng toàn bộ các dòng vào database.
+    Việc cập nhật metadata và thay thế các dòng dữ liệu được thực hiện atomically.
+    '''
     dataframe = pd.read_csv(path)
     columns = [str(column) for column in dataframe.columns]
 
@@ -136,6 +146,9 @@ def _sync_tabular_dataset(
 
 
 def _bulk_insert_rows(dataset: ProcessedDataset, dataframe: pd.DataFrame) -> None:
+    '''
+    Chèn các dòng của DataFrame vào dataset theo từng batch 1000 bản ghi.
+    '''
     rows: list[ProcessedDatasetRow] = []
     normalized = dataframe.where(pd.notnull(dataframe), None)
 
@@ -162,6 +175,10 @@ def _sync_file_artifact(
     path: Path,
     metadata: dict[str, Any],
 ) -> PipelineFileArtifact:
+    '''
+    Lưu nội dung, checksum và metadata của một artifact file vào database.
+    Các file văn bản được lưu dạng text; các file còn lại được lưu dạng binary.
+    '''
     payload = path.read_bytes()
     text_content = ""
     binary_content = None
@@ -191,12 +208,18 @@ def _sync_file_artifact(
 
 
 def _read_json_if_available(path: Path) -> Any:
+    '''
+    Đọc nội dung JSON của artifact nếu file có phần mở rộng `.json`.
+    '''
     if path.suffix.lower() != ".json":
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _json_safe(value: Any) -> Any:
+    '''
+    Chuyển giá trị pandas/numpy thành kiểu có thể lưu trong JSON.
+    '''
     if pd.isna(value):
         return None
     if hasattr(value, "item"):

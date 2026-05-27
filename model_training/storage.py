@@ -31,6 +31,10 @@ def sync_training_outputs_to_postgres(
     model_selection: dict[str, Any],
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, list[str]]:
+    '''
+    Đồng bộ các model và artifact của quá trình huấn luyện vào PostgreSQL.
+    Trả về danh sách artifact đã lưu theo nhóm model, metadata và explainer.
+    '''
     synced = {"models": [], "metadata": [], "explainers": []}
 
     for name, raw_path in output_paths.items():
@@ -38,6 +42,7 @@ def sync_training_outputs_to_postgres(
         if not path.exists():
             continue
 
+        # Model artifact được lưu cùng metric và tham số huấn luyện theo từng task.
         if name in MODEL_ARTIFACTS:
             model_name = MODEL_ARTIFACTS[name] or best_model_name
             _sync_artifact(
@@ -58,6 +63,7 @@ def sync_training_outputs_to_postgres(
             synced["models"].append(name)
             continue
 
+        # File báo cáo và cấu hình được lưu dưới dạng metadata của lần huấn luyện.
         if name in METADATA_ARTIFACTS:
             _sync_artifact(
                 artifact_type=TrainedModelArtifact.METADATA,
@@ -77,6 +83,7 @@ def sync_training_outputs_to_postgres(
             synced["metadata"].append(name)
             continue
 
+        # Explainer artifact được dành sẵn cho đầu ra giải thích model nếu được tạo.
         if name in EXPLAINER_ARTIFACTS:
             model_name = EXPLAINER_ARTIFACTS[name]
             _sync_artifact(
@@ -110,6 +117,10 @@ def _sync_artifact(
     mlflow_tracking: dict[str, Any],
     is_best: bool,
 ) -> TrainedModelArtifact:
+    '''
+    Lưu nội dung, checksum, metric và thông tin MLflow của một artifact model.
+    File văn bản được lưu dạng text; các định dạng còn lại được lưu dạng binary.
+    '''
     payload = path.read_bytes()
     text_content = ""
     binary_content = None
@@ -149,6 +160,9 @@ def _model_parameters(
     model_selection: dict[str, Any],
     model_name: str,
 ) -> dict[str, Any]:
+    '''
+    Lấy bộ tham số huấn luyện tương ứng với tên model từ cấu hình lựa chọn model.
+    '''
     training_config = model_selection.get("training_config") or {}
     if model_name == "classification":
         return training_config.get("classification_model_params", {})
@@ -158,6 +172,9 @@ def _model_parameters(
 
 
 def _read_json_if_available(path: Path) -> Any:
+    '''
+    Đọc nội dung JSON của artifact nếu file có phần mở rộng `.json`.
+    '''
     if path.suffix.lower() != ".json":
         return None
     return json.loads(path.read_text(encoding="utf-8"))

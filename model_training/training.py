@@ -36,6 +36,9 @@ REGRESSION_MODEL_NAME = "random_forest_regressor"
 
 @dataclass(frozen=True)
 class TrainingPaths:
+    '''
+    Chứa các đường dẫn đầu vào và đầu ra được sử dụng khi huấn luyện model.
+    '''
     feature_dir: Path
     model_dir: Path
     params_path: Path | None = None
@@ -47,6 +50,9 @@ class TrainingPaths:
         model_dir: str | Path | None = None,
         params_path: str | Path | None = None,
     ) -> "TrainingPaths":
+        '''
+        Tạo cấu hình đường dẫn từ tham số truyền vào hoặc từ thư mục mặc định.
+        '''
         base_dir = Path(settings.BASE_DIR)
         return cls(
             feature_dir=Path(feature_dir) if feature_dir else base_dir / "data" / "feature",
@@ -59,9 +65,14 @@ def train_models(
     paths: TrainingPaths | None = None,
     random_state: int = SEED,
 ) -> dict[str, Any]:
+    '''
+    Huấn luyện model phân loại và hồi quy từ các feature split đã tiền xử lý.
+    Hàm lưu model, báo cáo đánh giá, đồng bộ tracking và trả về kết quả huấn luyện.
+    '''
     paths = paths or TrainingPaths.from_defaults()
     paths.model_dir.mkdir(parents=True, exist_ok=True)
 
+    # Nạp dữ liệu đầu vào và cấu hình tùy chọn trước khi khởi tạo estimator.
     splits = load_feature_splits(paths.feature_dir)
     feature_columns = _read_json(paths.feature_dir / "feature_columns.json")
     medians = _read_json(paths.feature_dir / "medians.json")
@@ -77,6 +88,7 @@ def train_models(
     )
     regressor.fit(splits["X_train_reg"], splits["y_train_reg"])
 
+    # Đánh giá hai model trên các tập test tương ứng.
     class_predictions = classifier.predict(splits["X_test_class"])
     reg_predictions = np.clip(
         regressor.predict(splits["X_test_reg"]),
@@ -123,6 +135,7 @@ def train_models(
         "features": paths.model_dir / "features.json",
         "medians": paths.model_dir / "medians.json",
     }
+    # Lưu model đã fit và các artifact mô tả kết quả huấn luyện.
     joblib.dump(classifier, output_paths["classification_model"])
     joblib.dump(regressor, output_paths["regression_model"])
     _write_json(output_paths["metrics"], metrics)
@@ -168,6 +181,10 @@ def train_models(
 
 
 def load_feature_splits(feature_dir: Path) -> dict[str, pd.DataFrame | pd.Series]:
+    '''
+    Đọc các tập train/test và metadata cần thiết từ đầu ra của bước tiền xử lý.
+    Raise lỗi nếu thiếu bất kỳ file bắt buộc nào cho quá trình huấn luyện.
+    '''
     required_files = [
         "X_train_class.csv",
         "X_test_class.csv",
@@ -214,6 +231,10 @@ def evaluate_classifier(
     y_test: pd.Series,
     predictions: np.ndarray,
 ) -> dict[str, float]:
+    '''
+    Tính các metric đánh giá cho model phân loại.
+    ROC AUC chỉ được tính khi tập test chứa đủ hai lớp và model có xác suất dự đoán.
+    '''
     metrics = {
         "accuracy": float(accuracy_score(y_test, predictions)),
         "precision": float(precision_score(y_test, predictions, zero_division=0)),
@@ -230,6 +251,9 @@ def evaluate_regressor(
     y_test: pd.Series,
     predictions: np.ndarray,
 ) -> dict[str, float]:
+    '''
+    Tính các metric đánh giá cho model hồi quy dự đoán phần trăm học tập.
+    '''
     errors = np.abs(predictions - y_test)
     return {
         "rmse": float(root_mean_squared_error(y_test, predictions)),
@@ -250,6 +274,10 @@ def log_training_to_mlflow(
     model_dir: Path,
     random_state: int,
 ) -> dict[str, Any]:
+    '''
+    Ghi tham số, metric, artifact và registered models của lần huấn luyện lên MLflow.
+    Khi MLflow không khả dụng hoặc logging thất bại, trả về trạng thái và lý do.
+    '''
     tracking_uri = getattr(settings, "MLFLOW_TRACKING_URI", "")
     if not tracking_uri:
         return {"enabled": False, "reason": "MLFLOW_TRACKING_URI is not configured."}
@@ -329,6 +357,9 @@ def log_training_to_mlflow(
 
 
 def load_training_config(params_path: Path | None) -> dict[str, Any] | None:
+    '''
+    Đọc cấu hình tham số huấn luyện từ file JSON nếu file được cung cấp và tồn tại.
+    '''
     if not params_path or not params_path.exists():
         return None
     return _read_json(params_path)
@@ -338,6 +369,9 @@ def _classification_params(
     training_config: dict[str, Any] | None,
     random_state: int,
 ) -> dict[str, Any]:
+    '''
+    Tạo bộ tham số cho classifier và ghi đè bằng cấu hình tùy chọn nếu có.
+    '''
     params: dict[str, Any] = {
         "n_estimators": 200,
         "max_depth": None,
@@ -354,6 +388,9 @@ def _regression_params(
     training_config: dict[str, Any] | None,
     random_state: int,
 ) -> dict[str, Any]:
+    '''
+    Tạo bộ tham số cho regressor và ghi đè bằng cấu hình tùy chọn nếu có.
+    '''
     params: dict[str, Any] = {
         "n_estimators": 200,
         "max_depth": None,
@@ -366,6 +403,9 @@ def _regression_params(
 
 
 def _log_estimator_params(mlflow_module: Any, prefix: str, model: Any) -> None:
+    '''
+    Ghi các tham số đơn giản của estimator vào MLflow với tiền tố theo task.
+    '''
     for key, value in model.get_params().items():
         if isinstance(value, (str, int, float, bool)) or value is None:
             mlflow_module.log_param(f"{prefix}.{key}", value)
@@ -378,6 +418,9 @@ def _safe_sync_training_outputs_to_postgres(
     model_selection: dict[str, Any],
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, list[str]] | dict[str, Any]:
+    '''
+    Đồng bộ đầu ra huấn luyện sang PostgreSQL và chuyển lỗi thành kết quả trả về.
+    '''
     try:
         return _sync_training_outputs_to_postgres(
             output_paths=output_paths,
@@ -401,6 +444,9 @@ def _sync_training_outputs_to_postgres(
     model_selection: dict[str, Any],
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, list[str]]:
+    '''
+    Chuyển artifact và metadata của lần huấn luyện sang tầng lưu trữ PostgreSQL.
+    '''
     from model_training.storage import sync_training_outputs_to_postgres
 
     return sync_training_outputs_to_postgres(
@@ -413,8 +459,14 @@ def _sync_training_outputs_to_postgres(
 
 
 def _read_json(path: Path) -> Any:
+    '''
+    Đọc và phân tích nội dung của một file JSON UTF-8.
+    '''
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _write_json(path: Path, payload: Any) -> None:
+    '''
+    Ghi payload thành file JSON UTF-8 với định dạng dễ đọc.
+    '''
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

@@ -70,6 +70,9 @@ MODEL_FEATURE_COLUMNS = [
 # và frozen=True làm cho instance của class này trở nên bất biến (immutable), \
 # nghĩa là sau khi được tạo ra, bạn không thể thay đổi giá trị của các thuộc tính của nó.
 class PreprocessingPaths:
+    '''
+    Chứa các đường dẫn thư mục được sử dụng trong toàn bộ quy trình tiền xử lý.
+    '''
     raw_dir: Path
     preprocessed_dir: Path
     feature_dir: Path
@@ -85,6 +88,9 @@ class PreprocessingPaths:
         feature_dir: str | Path | None = None,
         plot_dir: str | Path | None = None,
     ) -> "PreprocessingPaths":
+        '''
+        Tạo cấu hình đường dẫn từ tham số đầu vào hoặc từ cấu trúc thư mục mặc định.
+        '''
         base_dir = Path(settings.BASE_DIR)
         resolved_preprocessed_dir = (
             Path(preprocessed_dir)
@@ -104,9 +110,14 @@ def run_preprocessing(
     test_size: float = 0.2,
     random_state: int = SEED,
 ) -> dict[str, Any]:
+    '''
+    Thực thi toàn bộ quy trình tiền xử lý dữ liệu và lưu các kết quả đầu ra.
+    Hàm trả về thống kê dataset, trạng thái MLflow/PostgreSQL và đường dẫn artifact.
+    '''
     paths = paths or PreprocessingPaths.from_defaults()
     _ensure_directories(paths)
 
+    # Đọc và làm sạch dữ liệu nguồn trước khi tổng hợp đặc trưng cho từng sinh viên.
     raw_tables = load_raw_tables(paths.raw_dir)
     missing_before = _missing_summary(raw_tables)
     cleaned_tables = clean_raw_tables(raw_tables)
@@ -147,6 +158,7 @@ def run_preprocessing(
         random_state=random_state,
     )
 
+    # Tạo báo cáo trực quan và lưu toàn bộ artifact dùng cho huấn luyện mô hình.
     plot_paths = save_preprocessing_plots(
         modeling_dataset=modeling_dataset,
         encoded_dataset=encoded_dataset,
@@ -230,6 +242,9 @@ def run_preprocessing(
 
 
 def load_raw_tables(raw_dir: Path) -> dict[str, pd.DataFrame]:
+    '''
+    Đọc các bảng dữ liệu OULAD thô cần thiết từ thư mục nguồn.
+    '''
     return {
         "student_info": _read_csv(raw_dir / "studentInfo.csv"),
         "student_reg": _read_csv(raw_dir / "studentRegistration.csv"),
@@ -565,6 +580,10 @@ def split_feature_sets(
     test_size: float,
     random_state: int,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    '''
+    Chia tập đặc trưng thành tập train/test riêng cho bài toán phân loại và hồi quy.
+    Tập phân loại được stratify theo nhãn khi có nhiều hơn một lớp.
+    '''
     stratify = y_class if y_class.nunique() > 1 else None
     X_train_class, X_test_class, y_train_class, y_test_class = train_test_split(
         X,
@@ -597,6 +616,10 @@ def save_preprocessing_plots(
     encoded_dataset: pd.DataFrame,
     paths: PreprocessingPaths,
 ) -> dict[str, str]:
+    '''
+    Tạo và lưu các biểu đồ mô tả phân phối mục tiêu và tương quan đặc trưng.
+    Trả về dictionary ánh xạ tên biểu đồ tới đường dẫn file đã lưu.
+    '''
     paths.plot_dir.mkdir(parents=True, exist_ok=True)
     plot_paths = {
         "final_result_distribution": paths.plot_dir / "final_result_distribution.png",
@@ -643,6 +666,10 @@ def build_preprocessing_profile(
     random_state: int,
     plot_paths: dict[str, str],
 ) -> dict[str, Any]:
+    '''
+    Tổng hợp hồ sơ tiền xử lý gồm kích thước dữ liệu, dữ liệu thiếu, mục tiêu
+    mô hình, cấu hình chia tập và đường dẫn biểu đồ.
+    '''
     return {
         "raw_shapes": {
             name: {"rows": int(frame.shape[0]), "columns": int(frame.shape[1])}
@@ -701,6 +728,11 @@ def save_outputs(
     profile: dict[str, Any],
     plot_paths: dict[str, str],
 ) -> dict[str, str]:
+    '''
+    Lưu dataset đã xử lý, tập đặc trưng, target, bộ chia train/test và metadata.
+    Trả về toàn bộ đường dẫn artifact để phục vụ tracking và đồng bộ dữ liệu.
+    '''
+    # Các file này mô tả dữ liệu sau khi làm sạch và xây dựng đặc trưng.
     preprocessed_files = {
         "students_labeled": paths.preprocessed_dir / "students_labeled.csv",
         "student_registration_cleaned": paths.preprocessed_dir / "student_registration_cleaned.csv",
@@ -718,6 +750,7 @@ def save_outputs(
     encoded_dataset.to_csv(preprocessed_files["preprocessed_dataset"], index=False)
     _write_json(preprocessed_files["preprocessing_profile"], profile)
 
+    # Các file này là đầu vào trực tiếp và metadata phục vụ huấn luyện mô hình.
     feature_files = {
         "X": paths.feature_dir / "X.csv",
         "y": paths.feature_dir / "y.csv",
@@ -816,6 +849,10 @@ def log_preprocessing_to_mlflow(
     test_size: float,
     random_state: int,
 ) -> dict[str, Any]:
+    '''
+    Ghi tham số, metric và artifact tiền xử lý lên MLflow nếu tracking được bật.
+    Khi MLflow không khả dụng hoặc logging thất bại, trả về lý do tương ứng.
+    '''
     tracking_uri = getattr(settings, "MLFLOW_TRACKING_URI", "")
     if not tracking_uri:
         return {"enabled": False, "reason": "MLFLOW_TRACKING_URI is not configured."}
@@ -906,6 +943,9 @@ def safe_divide(numerator: pd.Series, denominator: pd.Series) -> pd.Series:
 
 
 def _add_targets(students: pd.DataFrame) -> pd.DataFrame:
+    '''
+    Tạo nhãn phân loại pass/fail từ kết quả cuối cùng của sinh viên.
+    '''
     students = students.copy()
     students[TARGET_CLASS_COLUMN] = students["final_result"].map(
         {
@@ -919,6 +959,9 @@ def _add_targets(students: pd.DataFrame) -> pd.DataFrame:
 
 
 def _plot_bar(values: pd.Series, path: Path, *, title: str, ylabel: str) -> None:
+    '''
+    Lưu biểu đồ cột của một Series tại đường dẫn được chỉ định.
+    '''
     fig, ax = plt.subplots(figsize=(8, 5))
     values.sort_index().plot(kind="bar", ax=ax, color="#2E86AB")
     ax.set_title(title)
@@ -931,6 +974,9 @@ def _plot_bar(values: pd.Series, path: Path, *, title: str, ylabel: str) -> None
 
 
 def _plot_histogram(values: pd.Series, path: Path, *, title: str, xlabel: str) -> None:
+    '''
+    Lưu histogram biểu diễn phân phối của một biến số.
+    '''
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.hist(values.dropna(), bins=24, color="#39A96B", edgecolor="white")
     ax.set_title(title)
@@ -942,6 +988,9 @@ def _plot_histogram(values: pd.Series, path: Path, *, title: str, xlabel: str) -
 
 
 def _plot_correlation_heatmap(encoded_dataset: pd.DataFrame, path: Path) -> None:
+    '''
+    Lưu heatmap tương quan của các đặc trưng quan trọng có trong dataset.
+    '''
     preferred_columns = [
         "learning_percentage",
         "target_pass",
@@ -973,6 +1022,9 @@ def _plot_correlation_heatmap(encoded_dataset: pd.DataFrame, path: Path) -> None
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
+    '''
+    Đọc file CSV nguồn và coi ký hiệu `?` là giá trị thiếu.
+    '''
     if not path.exists():
         raise FileNotFoundError(f"Missing raw CSV file: {path}")
     return pd.read_csv(path, na_values=["?"])
@@ -998,12 +1050,18 @@ def _missing_summary(tables: dict[str, pd.DataFrame]) -> dict[str, dict[str, int
 
 
 def _ensure_directories(paths: PreprocessingPaths) -> None:
+    '''
+    Tạo các thư mục đầu ra cần thiết nếu chúng chưa tồn tại.
+    '''
     paths.preprocessed_dir.mkdir(parents=True, exist_ok=True)
     paths.feature_dir.mkdir(parents=True, exist_ok=True)
     paths.plot_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _write_json(path: Path, payload: Any) -> None:
+    '''
+    Ghi payload thành file JSON UTF-8 với định dạng dễ đọc.
+    '''
     path.write_text(
         json.dumps(payload, indent=2, sort_keys=True),
         encoding="utf-8",
@@ -1025,6 +1083,9 @@ def _safe_sync_outputs_to_postgres(
     random_state: int,
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, Any]:
+    '''
+    Thực hiện đồng bộ artifact sang PostgreSQL và chuyển lỗi thành kết quả trả về.
+    '''
     try:
         return _sync_outputs_to_postgres(
             output_paths=output_paths,
@@ -1063,6 +1124,9 @@ def _sync_outputs_to_postgres(
     random_state: int,
     mlflow_tracking: dict[str, Any],
 ) -> dict[str, Any]:
+    '''
+    Chuyển artifact cùng metadata của pipeline sang hàm lưu trữ PostgreSQL.
+    '''
     from preprocessing.storage import sync_preprocessing_outputs_to_postgres
 
     return sync_preprocessing_outputs_to_postgres(
